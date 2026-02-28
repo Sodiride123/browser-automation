@@ -3,15 +3,14 @@ Observer Module — Captures page state for the LLM planner.
 
 Responsibilities:
 - Take screenshots of the current page
-- Extract accessible DOM structure (simplified)
+- Extract accessibility tree (primary, ~90% token savings vs raw DOM)
+- Extract interactive elements as fallback
 - Capture page metadata (URL, title, errors)
-- Build the "observation" payload for the planner
+- Detect overlays/popups that may block interaction
 """
 
 import base64
-import json
 import re
-from pathlib import Path
 from typing import Optional
 
 from browser_interface import BrowserInterface
@@ -28,29 +27,50 @@ def observe(browser: BrowserInterface, step: int = 0, screenshot: bool = True) -
             "title": str,
             "screenshot_path": str | None,
             "screenshot_b64": str | None,
-            "dom_summary": str,
-            "errors": str | None,
+            "accessibility_tree": str,
             "interactive_elements": list[dict],
+            "has_overlay": bool,
+            "errors": str | None,
         }
     """
     browser._ok()
 
-    # Page metadata
-    url = browser.url
-    title = browser.title
+    # Wait briefly for any in-progress navigation to settle
+    try:
+        browser.page.wait_for_load_state("domcontentloaded", timeout=5000)
+    except Exception:
+        pass
+
+    try:
+        url = browser.url
+    except Exception:
+        url = "unknown"
+
+    try:
+        title = browser.title
+    except Exception:
+        title = ""
 
     # Screenshot
     screenshot_path = None
     screenshot_b64 = None
     if screenshot:
         screenshot_path = str(SCREENSHOTS_DIR / f"step_{step:03d}.png")
-        browser.screenshot(screenshot_path)
-        with open(screenshot_path, "rb") as f:
-            screenshot_b64 = base64.b64encode(f.read()).decode("utf-8")
+        try:
+            browser.screenshot(screenshot_path)
+            with open(screenshot_path, "rb") as f:
+                screenshot_b64 = base64.b64encode(f.read()).decode("utf-8")
+        except Exception:
+            screenshot_path = None
 
-    # Extract interactive elements and DOM summary
+    # Accessibility tree (primary representation — compact, structured)
+    a11y_tree = _get_accessibility_tree(browser)
+
+    # Interactive elements (used for selector resolution)
     interactive_elements = _extract_interactive_elements(browser)
-    dom_summary = _build_dom_summary(browser, interactive_elements)
+
+    # Detect overlays/popups
+    has_overlay = _detect_overlay(browser)
 
     # Error report
     errors = None
@@ -62,21 +82,103 @@ def observe(browser: BrowserInterface, step: int = 0, screenshot: bool = True) -
         "title": title,
         "screenshot_path": screenshot_path,
         "screenshot_b64": screenshot_b64,
-        "dom_summary": dom_summary,
-        "errors": errors,
+        "accessibility_tree": a11y_tree,
         "interactive_elements": interactive_elements,
+        "has_overlay": has_overlay,
+        "errors": errors,
     }
 
 
+def _get_accessibility_tree(browser: BrowserInterface) -> str:
+    """
+    Get the page's accessibility tree via Playwright.
+
+    This is the primary page representation — far more compact than raw DOM
+    while retaining all information the LLM needs to understand the page
+    structure and available interactions.
+    """
+    try:
+        snapshot = browser.page.accessibility.snapshot()
+        if snapshot:
+            return _format_a11y_node(snapshot, depth=0, max_depth=6)
+    except Exception:
+        pass
+
+    # Fallback to text-based summary if a11y tree unavailable
+    return _build_text_summary(browser)
+
+
+def _format_a11y_node(node: dict, depth: int = 0, max_depth: int = 6) -> str:
+    """Recursively format an accessibility tree node into a compact text representation."""
+    if depth > max_depth:
+        return ""
+
+    lines = []
+    indent = "  " * depth
+
+    role = node.get("role", "")
+    name = node.get("name", "").strip()
+    value = node.get("value", "")
+    description = node.get("description", "")
+    focused = node.get("focused", False)
+
+    # Skip generic/empty nodes
+    if role in ("none", "generic", "LineBreak") and not name:
+        children = node.get("children", [])
+        for child in children:
+            child_text = _format_a11y_node(child, depth, max_depth)
+            if child_text:
+                lines.append(child_text)
+        return "\n".join(lines)
+
+    # Build node description
+    parts = [f"{indent}[{role}]"]
+    if name:
+        parts.append(f'"{name[:80]}"')
+    if value:
+        parts.append(f'value="{str(value)[:40]}"')
+    if description:
+        parts.append(f'desc="{description[:40]}"')
+    if focused:
+        parts.append("(focused)")
+
+    line = " ".join(parts)
+    lines.append(line)
+
+    # Recurse into children
+    children = node.get("children", [])
+    for child in children:
+        child_text = _format_a11y_node(child, depth + 1, max_depth)
+        if child_text:
+            lines.append(child_text)
+
+    return "\n".join(lines)
+
+
+def _build_text_summary(browser: BrowserInterface) -> str:
+    """Fallback: build a text-based page summary when a11y tree is unavailable."""
+    try:
+        body_text = browser.text("body")
+        if body_text:
+            text = re.sub(r'\s+', ' ', body_text).strip()[:2000]
+            return f"Page text: {text}"
+    except Exception:
+        pass
+    return "(empty page)"
+
+
 def _extract_interactive_elements(browser: BrowserInterface) -> list[dict]:
-    """Extract clickable/interactive elements from the page with their attributes."""
+    """Extract clickable/interactive elements with multiple selector candidates for self-healing."""
     js = """
     (() => {
-        const selectors = 'a, button, input, select, textarea, [role="button"], [onclick], [tabindex]';
+        const selectors = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [onclick], [tabindex]:not([tabindex="-1"])';
         const elements = [...document.querySelectorAll(selectors)];
         return elements.slice(0, 100).map((el, i) => {
             const rect = el.getBoundingClientRect();
             if (rect.width === 0 && rect.height === 0) return null;
+            if (getComputedStyle(el).display === 'none') return null;
+            if (getComputedStyle(el).visibility === 'hidden') return null;
+
             const tag = el.tagName.toLowerCase();
             const type = el.getAttribute('type') || '';
             const text = (el.textContent || '').trim().slice(0, 80);
@@ -87,15 +189,20 @@ def _extract_interactive_elements(browser: BrowserInterface) -> list[dict]:
             const ariaLabel = el.getAttribute('aria-label') || '';
             const role = el.getAttribute('role') || '';
             const value = el.value || '';
+            const title = el.getAttribute('title') || '';
+            const className = el.className && typeof el.className === 'string' ? el.className.split(' ').filter(c => c.length > 0 && c.length < 30).slice(0, 3).join('.') : '';
 
-            // Build a selector for this element
-            let selector = tag;
-            if (id) selector = `#${id}`;
-            else if (name) selector = `${tag}[name="${name}"]`;
-            else if (ariaLabel) selector = `${tag}[aria-label="${ariaLabel}"]`;
-            else if (type && tag === 'input') selector = `input[type="${type}"]`;
-            else if (href && tag === 'a') selector = `a[href="${href.slice(0, 60)}"]`;
-            else if (text && text.length < 40) selector = `text=${text}`;
+            // Build multiple selector candidates (for self-healing)
+            const selectors = [];
+            if (id) selectors.push('#' + id);
+            if (ariaLabel) selectors.push(tag + '[aria-label="' + ariaLabel.slice(0, 50) + '"]');
+            if (name) selectors.push(tag + '[name="' + name + '"]');
+            if (title) selectors.push(tag + '[title="' + title.slice(0, 50) + '"]');
+            if (type && tag === 'input') selectors.push('input[type="' + type + '"]');
+            if (href && tag === 'a' && href.length < 80) selectors.push('a[href="' + href + '"]');
+            if (text && text.length > 0 && text.length < 40) selectors.push('text=' + text);
+            if (className) selectors.push(tag + '.' + className);
+            if (selectors.length === 0) selectors.push(tag);
 
             return {
                 index: i,
@@ -109,7 +216,8 @@ def _extract_interactive_elements(browser: BrowserInterface) -> list[dict]:
                 ariaLabel,
                 role,
                 value: value.slice(0, 40),
-                selector,
+                selector: selectors[0],
+                selectors: selectors,
                 visible: rect.top < window.innerHeight && rect.bottom > 0,
             };
         }).filter(Boolean);
@@ -121,37 +229,37 @@ def _extract_interactive_elements(browser: BrowserInterface) -> list[dict]:
         return []
 
 
-def _build_dom_summary(browser: BrowserInterface, elements: list[dict]) -> str:
-    """Build a concise text summary of the page for the LLM."""
-    lines = []
-
-    # Visible text summary (truncated)
+def _detect_overlay(browser: BrowserInterface) -> bool:
+    """Detect common overlays, cookie banners, and modals that may block interaction."""
+    js = """
+    (() => {
+        // Common overlay selectors
+        const overlaySelectors = [
+            '[class*="cookie"]', '[id*="cookie"]',
+            '[class*="consent"]', '[id*="consent"]',
+            '[class*="modal"]', '[id*="modal"]',
+            '[class*="popup"]', '[id*="popup"]',
+            '[class*="overlay"]', '[id*="overlay"]',
+            '[class*="banner"]', '[id*="banner"]',
+            '[role="dialog"]', '[role="alertdialog"]',
+            '.gdpr', '#gdpr',
+        ];
+        for (const sel of overlaySelectors) {
+            const els = document.querySelectorAll(sel);
+            for (const el of els) {
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                if (rect.width > 200 && rect.height > 100 &&
+                    style.display !== 'none' && style.visibility !== 'hidden' &&
+                    parseFloat(style.opacity || '1') > 0.5) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    })()
+    """
     try:
-        body_text = browser.text("body")
-        if body_text:
-            # Collapse whitespace and truncate
-            text = re.sub(r'\s+', ' ', body_text).strip()[:2000]
-            lines.append(f"Page text (truncated): {text}")
+        return browser.evaluate(js) or False
     except Exception:
-        pass
-
-    # Interactive elements table
-    if elements:
-        lines.append("\nInteractive elements:")
-        for el in elements:
-            if not el.get("visible"):
-                continue
-            desc_parts = [f"[{el['index']}]", el['tag']]
-            if el.get('type'):
-                desc_parts.append(f"type={el['type']}")
-            if el.get('text'):
-                desc_parts.append(f'"{el["text"]}"')
-            if el.get('placeholder'):
-                desc_parts.append(f'placeholder="{el["placeholder"]}"')
-            if el.get('href'):
-                desc_parts.append(f'href="{el["href"]}"')
-            if el.get('value'):
-                desc_parts.append(f'value="{el["value"]}"')
-            lines.append("  " + " ".join(desc_parts))
-
-    return "\n".join(lines)
+        return False

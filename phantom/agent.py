@@ -1,6 +1,13 @@
 """
 Phantom Agent — The core observe-think-act loop.
 
+Features:
+- Accessibility tree for compact page representation
+- Self-healing selectors with multi-strategy fallback
+- Overlay auto-dismissal (cookie banners, popups)
+- Loop detection to prevent infinite repetition
+- VNC integration for human override
+
 Usage:
     from phantom.agent import PhantomAgent
 
@@ -10,16 +17,14 @@ Usage:
 """
 
 import json
-import sys
 import time
-from pathlib import Path
 from typing import Optional
 
 from browser_interface import BrowserInterface
 from phantom.config import PhantomConfig, SCREENSHOTS_DIR
 from phantom.observer import observe
 from phantom.planner import plan_next_action
-from phantom.actions import execute_action
+from phantom.actions import execute_action, set_elements
 
 
 class PhantomAgent:
@@ -27,9 +32,9 @@ class PhantomAgent:
     Browser automation agent using an observe-think-act loop.
 
     The agent:
-    1. Observes the page (screenshot + DOM extraction)
+    1. Observes the page (accessibility tree + screenshot + interactive elements)
     2. Thinks (sends observation to LLM, gets next action)
-    3. Acts (executes the action in the browser)
+    3. Acts (executes the action with self-healing selectors)
     4. Repeats until task is done, fails, or max steps reached
     """
 
@@ -63,7 +68,6 @@ class PhantomAgent:
         """
         self.history = []
 
-        # Setup browser
         if browser:
             self.browser = browser
             self._owns_browser = False
@@ -93,6 +97,11 @@ class PhantomAgent:
                 if self.config.verbose:
                     print(f"[phantom] URL: {observation['url']}")
                     print(f"[phantom] Title: {observation['title']}")
+                    if observation.get("has_overlay"):
+                        print("[phantom] ⚠️ Overlay detected")
+
+                # Pass interactive elements to actions module for self-healing
+                set_elements(observation.get("interactive_elements", []))
 
                 # 2. Think (plan next action)
                 plan = plan_next_action(observation, task, self.history, self.config)
@@ -105,7 +114,8 @@ class PhantomAgent:
                 action_params = plan["params"]
                 result = execute_action(self.browser, action_name, action_params)
                 if self.config.verbose:
-                    print(f"[phantom] Result: {result}")
+                    result_preview = result[:200] + "..." if len(result) > 200 else result
+                    print(f"[phantom] Result: {result_preview}")
 
                 # Record in history
                 self.history.append({
@@ -140,7 +150,7 @@ class PhantomAgent:
                         "vnc_hint": "Connect to VNC at port 6080 to interact with the browser",
                     }
 
-                # Check for action errors — if same error 3 times, bail
+                # Check for repeated errors (3 consecutive → fail)
                 if result.startswith("ERROR:"):
                     error_count = sum(
                         1 for h in self.history[-3:]
@@ -154,7 +164,17 @@ class PhantomAgent:
                             "history": self.history,
                         }
 
-            # Max steps reached
+                # Loop detection: same action+params repeated 3+ times
+                if self._detect_loop():
+                    if self.config.verbose:
+                        print("[phantom] ⚠️ Loop detected — agent is repeating the same action")
+                    return {
+                        "status": "fail",
+                        "result": "Loop detected: agent repeated the same action 3 times without progress",
+                        "steps": step + 1,
+                        "history": self.history,
+                    }
+
             return {
                 "status": "max_steps",
                 "result": f"Reached max steps ({self.config.max_steps}) without completing task",
@@ -178,3 +198,12 @@ class PhantomAgent:
         )
         b.start()
         return b
+
+    def _detect_loop(self) -> bool:
+        """Detect if the agent is stuck in a loop (same action repeated 3+ times)."""
+        if len(self.history) < 3:
+            return False
+        last_3 = self.history[-3:]
+        # Check if the last 3 actions are identical (same action + same params)
+        actions = [(h["action"], json.dumps(h["params"], sort_keys=True)) for h in last_3]
+        return len(set(actions)) == 1

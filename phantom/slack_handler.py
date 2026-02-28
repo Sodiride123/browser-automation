@@ -1,17 +1,21 @@
 """
 Slack Command Handler — Processes Phantom commands from Slack.
 
+Phantom has its own Slack identity (name: Phantom, emoji: ghost).
+Uses a custom slack_say function that sends messages as Phantom,
+separate from the other agents (Bolt, Nova, etc.).
+
 Handles natural language commands like:
     @phantom go to google.com and search for AI news
     @phantom screenshot https://example.com
     @phantom extract prices from https://shop.example.com
-    @phantom fill out the form at https://example.com/contact
 """
 
 import json
 import subprocess
 import sys
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -21,16 +25,33 @@ from phantom.agent import PhantomAgent
 from phantom.config import PhantomConfig, SCREENSHOTS_DIR
 from phantom.vnc import get_vnc_url
 
+# Phantom Slack identity
+PHANTOM_NAME = "Phantom"
+PHANTOM_EMOJI = ":ghost:"
 
-def slack_say(message: str, thread_ts: Optional[str] = None):
-    """Post a message to Slack as Phantom."""
-    cmd = ["python", "slack_interface.py", "say", message]
+
+def phantom_say(message: str, thread_ts: Optional[str] = None):
+    """Post a message to Slack as Phantom with its own identity."""
+    cmd = [
+        "python", "slack_interface.py", "say", message,
+        "--agent-name", PHANTOM_NAME,
+        "--agent-emoji", PHANTOM_EMOJI,
+    ]
     if thread_ts:
         cmd.extend(["-t", thread_ts])
-    subprocess.run(cmd, capture_output=True)
+
+    # Try with custom agent identity
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    # Fallback: if the custom agent flags aren't supported, use raw say
+    if result.returncode != 0:
+        cmd_fallback = ["python", "slack_interface.py", "say", f"👻 {message}"]
+        if thread_ts:
+            cmd_fallback.extend(["-t", thread_ts])
+        subprocess.run(cmd_fallback, capture_output=True)
 
 
-def slack_upload(file_path: str, title: str = "", thread_ts: Optional[str] = None):
+def phantom_upload(file_path: str, title: str = "", thread_ts: Optional[str] = None):
     """Upload a file to Slack."""
     cmd = ["python", "slack_interface.py", "upload", file_path]
     if title:
@@ -51,17 +72,13 @@ def handle_command(command: str, thread_ts: Optional[str] = None) -> dict:
     Returns:
         The agent result dict
     """
-    # Parse out URL if present
     url = _extract_url(command)
 
-    # Acknowledge the command
+    # Acknowledge
     vnc_url = get_vnc_url()
-    slack_say(
-        f"🔄 Working on it...\n🖥️ Watch live: {vnc_url}",
-        thread_ts=thread_ts,
-    )
+    phantom_say(f"Working on it... Watch live: {vnc_url}", thread_ts=thread_ts)
 
-    # Run the agent
+    # Run agent
     config = PhantomConfig.load()
     config.verbose = False
     agent = PhantomAgent(config=config)
@@ -70,44 +87,35 @@ def handle_command(command: str, thread_ts: Optional[str] = None) -> dict:
     # Report results
     status = result["status"]
     if status == "done":
-        msg = f"✅ Done ({result['steps']} steps)\n\n{result['result']}"
-        slack_say(msg, thread_ts=thread_ts)
-
-        # Upload final screenshot if available
+        phantom_say(f"Done ({result['steps']} steps)\n\n{result['result']}", thread_ts=thread_ts)
         last_screenshot = _get_latest_screenshot()
         if last_screenshot:
-            slack_upload(last_screenshot, title="Final screenshot", thread_ts=thread_ts)
+            phantom_upload(last_screenshot, title="Final screenshot", thread_ts=thread_ts)
 
     elif status == "need_human":
-        slack_say(
-            f"🙋 Need human help: {result['result']}\n\n"
-            f"🖥️ Open the browser: {vnc_url}\n"
-            f"Reply in this thread when done.",
+        phantom_say(
+            f"Need human help: {result['result']}\n\nOpen the browser: {vnc_url}\nReply in this thread when done.",
             thread_ts=thread_ts,
         )
 
     elif status == "fail":
-        slack_say(
-            f"❌ Failed ({result['steps']} steps): {result['result']}",
-            thread_ts=thread_ts,
-        )
+        phantom_say(f"Failed ({result['steps']} steps): {result['result']}", thread_ts=thread_ts)
 
     elif status == "max_steps":
-        slack_say(
-            f"⏱️ Hit step limit ({result['steps']}). Partial progress:\n{result['result']}",
-            thread_ts=thread_ts,
-        )
+        phantom_say(f"Hit step limit ({result['steps']}). Partial progress:\n{result['result']}", thread_ts=thread_ts)
 
     return result
 
 
 def _extract_url(text: str) -> Optional[str]:
     """Extract a URL from command text if present."""
-    import re
+    # Handle Slack's URL formatting: <http://url|display>
+    match = re.search(r'<(https?://[^|>]+)(?:\|[^>]*)?>',  text)
+    if match:
+        return match.group(1)
     match = re.search(r'https?://[^\s<>]+', text)
     if match:
         return match.group(0)
-    # Check for domain-like patterns
     match = re.search(r'(?:go to|visit|open|navigate to|screenshot)\s+([a-zA-Z0-9][\w.-]+\.[a-zA-Z]{2,}[^\s]*)', text, re.IGNORECASE)
     if match:
         return "https://" + match.group(1)
