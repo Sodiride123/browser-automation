@@ -2,9 +2,17 @@
 
 ## Session Log
 
+### Session 5 - 2026-02-28
+- GitHub push success! Refreshed token from /dev/shm/mcp-token, all commits synced
+- Added Set-of-Mark (SoM) screenshots: red numbered badges on interactive elements
+  - Injected before screenshot, removed after; caps at 50 labels
+  - Tested on HN (100 elements) and example.com
+- 163 tests all passing (7 new SoM tests)
+- 4 commits on GitHub: bed21d8, 85c7442, ab44bcf, 6edd0f5, 3ccfaab
+
 ### Session 4 - 2026-02-28
 - Created comprehensive test suite: 156 tests across 7 test files
-  - test_config.py (8), test_prompts.py (14), test_planner.py (16), test_actions.py (44), test_agent.py (17), test_observer.py (15), test_presets.py (13), test_slack_handler.py (12)
+  - test_config.py (8), test_prompts.py (14), test_planner.py (16), test_actions.py (44), test_agent.py (17), test_observer.py (15+7), test_presets.py (13), test_slack_handler.py (12)
 - Added task presets module (phantom/presets.py): screenshot, extract, extract_links, search, fill_form, pdf, monitor
   - CLI: `python phantom/run.py --preset screenshot --url https://example.com`
   - CLI: `python phantom/run.py --list-presets`
@@ -64,7 +72,8 @@ phantom/
 ```
 
 ## Pending Items
-- ~~Push to GitHub~~ DONE — token refreshed from /dev/shm/mcp-token, all 3 commits pushed (6edd0f5)
+- ~~Push to GitHub~~ DONE
+- ~~Set-of-Mark screenshots~~ DONE (3ccfaab)
 - Merge with Nova's parallel implementation if needed
-- Set-of-Mark screenshots — overlay numbered labels on elements
 - Action caching — cache resolved selectors for repeat tasks
+- Token refresh: read GitHub token from /dev/shm/mcp-token (Github key, access_token field)

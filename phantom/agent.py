@@ -200,10 +200,30 @@ class PhantomAgent:
         return b
 
     def _detect_loop(self) -> bool:
-        """Detect if the agent is stuck in a loop (same action repeated 3+ times)."""
+        """
+        Detect if the agent is stuck in a loop.
+
+        Checks two patterns:
+        1. Exact repeat: same action + same params 3 times in a row
+        2. Stagnation: same action type 4+ times in a row (even with different params)
+           This catches cases where the agent keeps extracting HTML with slightly
+           different selectors but never makes progress.
+        """
         if len(self.history) < 3:
             return False
+
+        # Pattern 1: Exact repeat (3 identical)
         last_3 = self.history[-3:]
-        # Check if the last 3 actions are identical (same action + same params)
         actions = [(h["action"], json.dumps(h["params"], sort_keys=True)) for h in last_3]
-        return len(set(actions)) == 1
+        if len(set(actions)) == 1:
+            return True
+
+        # Pattern 2: Stagnation (same action type 4+ times, excluding navigation/terminal)
+        if len(self.history) >= 4:
+            last_4 = self.history[-4:]
+            action_names = [h["action"] for h in last_4]
+            non_progress_actions = {"extract_text", "extract_html", "extract_attribute", "scroll_down", "scroll_up", "screenshot", "wait"}
+            if len(set(action_names)) == 1 and action_names[0] in non_progress_actions:
+                return True
+
+        return False

@@ -312,3 +312,66 @@ class TestDetectLoop:
             {"action": "click", "params": {"selector": "#btn"}},
         ]
         assert agent._detect_loop() is True
+
+    def test_stagnation_extract_html(self):
+        """Same action type 4 times with different params (stagnation)."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "extract_html", "params": {"selector": "#results"}},
+            {"action": "extract_html", "params": {"selector": "ol#results"}},
+            {"action": "extract_html", "params": {"selector": "ol#results > li"}},
+            {"action": "extract_html", "params": {"selector": "#results > li.algo"}},
+        ]
+        assert agent._detect_loop() is True
+
+    def test_stagnation_extract_text(self):
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "extract_text", "params": {"selector": "body"}},
+            {"action": "extract_text", "params": {"selector": "#content"}},
+            {"action": "extract_text", "params": {"selector": "main"}},
+            {"action": "extract_text", "params": {"selector": "article"}},
+        ]
+        assert agent._detect_loop() is True
+
+    def test_stagnation_scroll(self):
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "scroll_down", "params": {"px": 500}},
+            {"action": "scroll_down", "params": {"px": 300}},
+            {"action": "scroll_down", "params": {"px": 800}},
+            {"action": "scroll_down", "params": {"px": 500}},
+        ]
+        assert agent._detect_loop() is True
+
+    def test_no_stagnation_for_click(self):
+        """Click with different selectors is NOT stagnation (progressing through elements)."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "click", "params": {"selector": "#btn1"}},
+            {"action": "click", "params": {"selector": "#btn2"}},
+            {"action": "click", "params": {"selector": "#btn3"}},
+            {"action": "click", "params": {"selector": "#btn4"}},
+        ]
+        assert agent._detect_loop() is False
+
+    def test_no_stagnation_for_goto(self):
+        """Navigation to different URLs is NOT stagnation."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "goto", "params": {"url": "https://a.com"}},
+            {"action": "goto", "params": {"url": "https://b.com"}},
+            {"action": "goto", "params": {"url": "https://c.com"}},
+            {"action": "goto", "params": {"url": "https://d.com"}},
+        ]
+        assert agent._detect_loop() is False
+
+    def test_stagnation_needs_4(self):
+        """Only 3 same-type actions is NOT stagnation."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "extract_html", "params": {"selector": "#a"}},
+            {"action": "extract_html", "params": {"selector": "#b"}},
+            {"action": "extract_html", "params": {"selector": "#c"}},
+        ]
+        assert agent._detect_loop() is False
