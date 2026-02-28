@@ -42,15 +42,24 @@ You must respond with a JSON object containing:
 - scroll_down(px): Scroll down (default 500px)
 - scroll_up(px): Scroll up (default 500px)
 - scroll_to(selector): Scroll an element into view
+- scroll_to_top(): Scroll to the top of the page
+- scroll_to_bottom(): Scroll to the bottom of the page
 
 ### Data Extraction
 - extract_text(selector): Get text content of an element (use "body" for full page)
 - extract_html(selector): Get HTML of an element
 - extract_attribute(selector, attribute): Get an attribute value
+- extract_table(selector): Extract a table as structured rows (default: "table")
+- extract_links(selector): Extract all links (text + URL) from a container
 
 ### Page Control
 - wait(seconds): Wait for a number of seconds
+- wait_for_element(selector, timeout): Wait for an element to appear (default 10s)
 - screenshot(filename): Take a screenshot and save it
+- save_pdf(filename): Save the page as PDF
+- execute_js(script): Run custom JavaScript and return the result
+- get_cookies(): List cookies for the current page
+- clear_cookies(): Clear all cookies
 
 ### Task Control
 - done(result): Mark the task as complete. Include the result/answer.

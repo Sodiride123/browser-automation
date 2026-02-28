@@ -12,6 +12,12 @@ class TestSystemPrompt:
         for action in ["goto", "click", "fill", "type_text", "press", "done", "fail", "need_human"]:
             assert action in SYSTEM_PROMPT
 
+    def test_has_extended_actions(self):
+        for action in ["extract_table", "extract_links", "save_pdf", "execute_js",
+                        "scroll_to_top", "scroll_to_bottom", "wait_for_element",
+                        "get_cookies", "clear_cookies"]:
+            assert action in SYSTEM_PROMPT
+
     def test_has_selector_guidance(self):
         assert "#id" in SYSTEM_PROMPT
         assert "aria-label" in SYSTEM_PROMPT

@@ -204,6 +204,92 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
             reason = params.get("reason", "Human intervention needed")
             return f"NEED_HUMAN: {reason}"
 
+        # --- Extended actions ---
+
+        elif action == "save_pdf":
+            filename = params.get("filename", "page.pdf")
+            path = str(SCREENSHOTS_DIR / filename)
+            browser.pdf(path)
+            return f"PDF saved to {path}"
+
+        elif action == "scroll_to_top":
+            browser.scroll_to_top()
+            return "Scrolled to top of page"
+
+        elif action == "scroll_to_bottom":
+            browser.scroll_to_bottom()
+            return "Scrolled to bottom of page"
+
+        elif action == "wait_for_element":
+            selector = _resolve_selector(params.get("selector", ""))
+            timeout = params.get("timeout", 10000)
+            browser.wait_for(selector, timeout=timeout)
+            return f"Element appeared: {selector}"
+
+        elif action == "extract_table":
+            selector = params.get("selector", "table")
+            safe_sel = selector.replace("'", "\\'")
+            table_data = browser.evaluate(f"""
+            (() => {{
+                const table = document.querySelector('{safe_sel}');
+                if (!table) return null;
+                const rows = [];
+                for (const tr of table.querySelectorAll('tr')) {{
+                    const cells = [];
+                    for (const td of tr.querySelectorAll('td, th')) {{
+                        cells.push(td.innerText.trim());
+                    }}
+                    if (cells.length > 0) rows.push(cells);
+                }}
+                return rows;
+            }})()
+            """)
+            if table_data is None:
+                return f"No table found matching: {selector}"
+            # Format as readable text
+            lines = []
+            for row in table_data[:50]:  # Cap at 50 rows
+                lines.append(" | ".join(str(c) for c in row))
+            truncated = "\n".join(lines)[:2000]
+            return f"Table from {selector} ({len(table_data)} rows):\n{truncated}"
+
+        elif action == "extract_links":
+            selector = params.get("selector", "body")
+            safe_sel = selector.replace("'", "\\'")
+            links = browser.evaluate(f"""
+            (() => {{
+                const container = document.querySelector('{safe_sel}') || document.body;
+                const anchors = container.querySelectorAll('a[href]');
+                return Array.from(anchors).slice(0, 50).map(a => ({{
+                    text: a.innerText.trim().substring(0, 100),
+                    href: a.href
+                }}));
+            }})()
+            """)
+            if not links:
+                return f"No links found in: {selector}"
+            lines = [f"- [{l['text']}]({l['href']})" for l in links]
+            truncated = "\n".join(lines)[:2000]
+            return f"Links from {selector} ({len(links)}):\n{truncated}"
+
+        elif action == "execute_js":
+            script = params.get("script", "")
+            # Wrap in IIFE if it contains return statements (common LLM output)
+            if "return " in script and not script.strip().startswith("("):
+                script = f"(() => {{ {script} }})()"
+            result_val = browser.evaluate(script)
+            result_str = str(result_val)[:2000] if result_val is not None else "(undefined)"
+            return f"JS result: {result_str}"
+
+        elif action == "get_cookies":
+            cookies = browser.cookies()
+            cookie_names = [c.get("name", "?") for c in (cookies or [])[:20]]
+            return f"Cookies ({len(cookies or [])}): {', '.join(cookie_names)}"
+
+        elif action == "clear_cookies":
+            browser.clear_cookies()
+            return "Cookies cleared"
+
         else:
             return f"Unknown action: {action}"
 
@@ -238,16 +324,16 @@ def _ensure_visible(browser: BrowserInterface, selector: str):
     """Scroll element into view if it exists but is outside the viewport."""
     resolved = _resolve_selector(selector)
     try:
-        # Check if element exists and is outside viewport
-        is_offscreen = browser.evaluate("""
-        (sel) => {
+        safe_sel = resolved.replace("'", "\\'")
+        is_offscreen = browser.evaluate(f"""
+        (() => {{
             let el = null;
-            try { el = document.querySelector(sel); } catch(e) {}
+            try {{ el = document.querySelector('{safe_sel}'); }} catch(e) {{}}
             if (!el) return false;
             const rect = el.getBoundingClientRect();
             return rect.bottom < 0 || rect.top > window.innerHeight;
-        }
-        """, resolved)
+        }})()
+        """)
         if is_offscreen:
             browser.scroll_to(resolved)
             time.sleep(0.3)

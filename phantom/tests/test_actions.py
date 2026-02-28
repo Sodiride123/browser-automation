@@ -497,3 +497,87 @@ class TestNavigationAwareClick:
         # Should not have called wait_for_load_state for navigation
         # (it may be called by _maybe_invalidate_cache at start, but not for nav)
         mock_browser.click.assert_called()
+
+
+class TestExtendedActions:
+    """Tests for extended actions (v0.8)."""
+
+    def test_save_pdf(self, mock_browser):
+        result = execute_action(mock_browser, "save_pdf", {"filename": "test.pdf"})
+        assert "PDF saved" in result
+        mock_browser.pdf.assert_called_once()
+
+    def test_scroll_to_top(self, mock_browser):
+        result = execute_action(mock_browser, "scroll_to_top", {})
+        assert "top" in result.lower()
+        mock_browser.scroll_to_top.assert_called_once()
+
+    def test_scroll_to_bottom(self, mock_browser):
+        result = execute_action(mock_browser, "scroll_to_bottom", {})
+        assert "bottom" in result.lower()
+        mock_browser.scroll_to_bottom.assert_called_once()
+
+    def test_wait_for_element(self, mock_browser):
+        result = execute_action(mock_browser, "wait_for_element", {"selector": "#loaded"})
+        assert "appeared" in result
+        mock_browser.wait_for.assert_called_once()
+
+    def test_wait_for_element_timeout(self, mock_browser):
+        result = execute_action(mock_browser, "wait_for_element", {"selector": "#loaded", "timeout": 5000})
+        mock_browser.wait_for.assert_called_with("#loaded", timeout=5000)
+
+    def test_extract_table(self, mock_browser):
+        mock_browser.evaluate.return_value = [
+            ["Name", "Age"],
+            ["Alice", "30"],
+            ["Bob", "25"],
+        ]
+        result = execute_action(mock_browser, "extract_table", {"selector": "table#users"})
+        assert "3 rows" in result
+        assert "Alice" in result
+        assert "Name | Age" in result
+
+    def test_extract_table_not_found(self, mock_browser):
+        mock_browser.evaluate.return_value = None
+        result = execute_action(mock_browser, "extract_table", {"selector": "table.missing"})
+        assert "No table found" in result
+
+    def test_extract_links(self, mock_browser):
+        mock_browser.evaluate.return_value = [
+            {"text": "Example", "href": "https://example.com"},
+            {"text": "Google", "href": "https://google.com"},
+        ]
+        result = execute_action(mock_browser, "extract_links", {"selector": "nav"})
+        assert "2" in result
+        assert "Example" in result
+        assert "https://example.com" in result
+
+    def test_extract_links_none(self, mock_browser):
+        mock_browser.evaluate.return_value = []
+        result = execute_action(mock_browser, "extract_links", {"selector": "body"})
+        assert "No links found" in result
+
+    def test_execute_js(self, mock_browser):
+        mock_browser.evaluate.return_value = 42
+        result = execute_action(mock_browser, "execute_js", {"script": "1 + 1"})
+        assert "42" in result
+
+    def test_execute_js_undefined(self, mock_browser):
+        mock_browser.evaluate.return_value = None
+        result = execute_action(mock_browser, "execute_js", {"script": "void 0"})
+        assert "undefined" in result
+
+    def test_get_cookies(self, mock_browser):
+        mock_browser.cookies.return_value = [
+            {"name": "session", "value": "abc123"},
+            {"name": "theme", "value": "dark"},
+        ]
+        result = execute_action(mock_browser, "get_cookies", {})
+        assert "session" in result
+        assert "theme" in result
+        assert "2" in result
+
+    def test_clear_cookies(self, mock_browser):
+        result = execute_action(mock_browser, "clear_cookies", {})
+        assert "cleared" in result.lower()
+        mock_browser.clear_cookies.assert_called_once()
