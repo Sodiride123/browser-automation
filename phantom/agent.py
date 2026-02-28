@@ -24,7 +24,7 @@ from browser_interface import BrowserInterface
 from phantom.config import PhantomConfig, SCREENSHOTS_DIR
 from phantom.observer import observe
 from phantom.planner import plan_next_action
-from phantom.actions import execute_action, set_elements
+from phantom.actions import execute_action, set_elements, clear_selector_cache
 
 
 class PhantomAgent:
@@ -150,13 +150,16 @@ class PhantomAgent:
                         "vnc_hint": "Connect to VNC at port 6080 to interact with the browser",
                     }
 
-                # Check for repeated errors (3 consecutive → fail)
+                # Check for repeated errors with recovery attempts
                 if result.startswith("ERROR:"):
                     error_count = sum(
                         1 for h in self.history[-3:]
                         if h.get("result", "").startswith("ERROR:")
                     )
-                    if error_count >= 3:
+                    if error_count == 2:
+                        # Try recovery before giving up: clear cache + wait for page stability
+                        self._attempt_recovery()
+                    elif error_count >= 3:
                         return {
                             "status": "fail",
                             "result": f"Repeated errors: {result}",
@@ -199,15 +202,32 @@ class PhantomAgent:
         b.start()
         return b
 
+    def _attempt_recovery(self):
+        """Try to recover from errors: clear caches, wait for page stability, dismiss overlays."""
+        if self.config.verbose:
+            print("[phantom] Attempting error recovery...")
+        try:
+            clear_selector_cache()
+            # Wait for any pending navigation/loads to settle
+            self.browser.page.wait_for_load_state("domcontentloaded", timeout=5000)
+            time.sleep(0.5)
+            # Try dismissing any overlay that might be blocking
+            from phantom.actions import _dismiss_overlay
+            _dismiss_overlay(self.browser)
+        except Exception:
+            pass  # Recovery is best-effort
+
     def _detect_loop(self) -> bool:
         """
         Detect if the agent is stuck in a loop.
 
-        Checks two patterns:
+        Checks three patterns:
         1. Exact repeat: same action + same params 3 times in a row
         2. Stagnation: same action type 4+ times in a row (even with different params)
            This catches cases where the agent keeps extracting HTML with slightly
            different selectors but never makes progress.
+        3. Navigation loop: goto actions in last 6 steps with only 2 unique URLs
+           (agent bouncing between two pages without making progress)
         """
         if len(self.history) < 3:
             return False
@@ -224,6 +244,16 @@ class PhantomAgent:
             action_names = [h["action"] for h in last_4]
             non_progress_actions = {"extract_text", "extract_html", "extract_attribute", "scroll_down", "scroll_up", "screenshot", "wait"}
             if len(set(action_names)) == 1 and action_names[0] in non_progress_actions:
+                return True
+
+        # Pattern 3: Navigation loop (bouncing between ≤2 URLs in last 6 steps)
+        if len(self.history) >= 6:
+            last_6 = self.history[-6:]
+            goto_urls = [
+                h["params"].get("url", "") for h in last_6
+                if h["action"] == "goto"
+            ]
+            if len(goto_urls) >= 4 and len(set(goto_urls)) <= 2:
                 return True
 
         return False

@@ -375,3 +375,105 @@ class TestDetectLoop:
             {"action": "extract_html", "params": {"selector": "#c"}},
         ]
         assert agent._detect_loop() is False
+
+
+class TestErrorRecovery:
+    """Tests for smart error recovery."""
+
+    @patch("phantom.agent.execute_action")
+    @patch("phantom.agent.plan_next_action")
+    @patch("phantom.agent.observe")
+    def test_recovery_attempted_on_second_error(self, mock_observe, mock_plan, mock_execute, config, mock_browser):
+        """On the 2nd consecutive error, recovery should be attempted before 3rd try."""
+        mock_observe.return_value = make_observation()
+        # 2 errors, then recovery helps and 3rd succeeds
+        mock_plan.side_effect = [
+            {"thought": "Try 1", "action": "click", "params": {"selector": "#btn"}},
+            {"thought": "Try 2", "action": "click", "params": {"selector": "#btn2"}},
+            {"thought": "Try 3", "action": "done", "params": {"result": "ok"}},
+        ]
+        mock_execute.side_effect = [
+            "ERROR: click failed — element not found",
+            "ERROR: click failed — element not found",
+            "DONE: ok",
+        ]
+
+        agent = PhantomAgent(config=config)
+        result = agent.run(task="Click something", browser=mock_browser)
+
+        # Should have recovered — 3rd step succeeds
+        assert result["status"] == "done"
+        # Verify recovery was attempted (wait_for_load_state called during recovery)
+        mock_browser.page.wait_for_load_state.assert_called()
+
+    @patch("phantom.agent.execute_action")
+    @patch("phantom.agent.plan_next_action")
+    @patch("phantom.agent.observe")
+    def test_recovery_still_fails_after_3_errors(self, mock_observe, mock_plan, mock_execute, config, mock_browser):
+        """If recovery doesn't help, 3 consecutive errors should still fail."""
+        mock_observe.return_value = make_observation()
+        mock_plan.return_value = {
+            "thought": "Trying",
+            "action": "click",
+            "params": {"selector": "#missing"},
+        }
+        mock_execute.return_value = "ERROR: click failed — element not found"
+
+        agent = PhantomAgent(config=config)
+        result = agent.run(task="Click missing", browser=mock_browser)
+
+        assert result["status"] == "fail"
+        assert "Repeated errors" in result["result"]
+
+
+class TestNavigationLoop:
+    """Tests for navigation loop detection (Pattern 3)."""
+
+    def test_bouncing_between_two_urls(self):
+        """Agent going back and forth between 2 URLs should be detected as loop."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+        ]
+        assert agent._detect_loop() is True
+
+    def test_mixed_navigation_loop(self):
+        """Goto mixed with other actions but still bouncing between 2 URLs."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "screenshot", "params": {}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "screenshot", "params": {}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+        ]
+        assert agent._detect_loop() is True
+
+    def test_many_unique_urls_not_loop(self):
+        """Navigating to many different URLs is NOT a loop."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://c.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://d.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://e.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://f.com"}, "result": "ok"},
+        ]
+        assert agent._detect_loop() is False
+
+    def test_short_history_no_nav_loop(self):
+        """Less than 6 steps shouldn't trigger navigation loop detection."""
+        agent = PhantomAgent()
+        agent.history = [
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://b.com"}, "result": "ok"},
+            {"action": "goto", "params": {"url": "https://a.com"}, "result": "ok"},
+        ]
+        assert agent._detect_loop() is False

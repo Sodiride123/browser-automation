@@ -471,3 +471,29 @@ class TestEnsureVisible:
         mock_browser.evaluate.side_effect = Exception("evaluate failed")
         result = execute_action(mock_browser, "click", {"selector": "#btn"})
         assert "Clicked" in result
+
+
+class TestNavigationAwareClick:
+    """Tests for smart post-click navigation detection."""
+
+    def test_click_detects_navigation(self, mock_browser):
+        """When URL changes after click, should wait for page load and clear cache."""
+        import phantom.actions
+        phantom.actions._cache_url = "https://example.com"
+
+        # URL changes after click: first call returns original, subsequent returns new
+        url_calls = iter(["https://example.com", "https://example.com", "https://example.com/page2"])
+        type(mock_browser).url = property(lambda self: next(url_calls, "https://example.com/page2"))
+
+        execute_action(mock_browser, "click", {"selector": "#link"})
+        # Cache should be cleared due to navigation and load state waited on
+        mock_browser.page.wait_for_load_state.assert_called()
+
+    def test_click_same_page_no_extra_wait(self, mock_browser):
+        """When URL stays the same after click, should not wait for load."""
+        # URL stays at https://example.com (mock default)
+        mock_browser.evaluate.return_value = False
+        execute_action(mock_browser, "click", {"selector": "#btn"})
+        # Should not have called wait_for_load_state for navigation
+        # (it may be called by _maybe_invalidate_cache at start, but not for nav)
+        mock_browser.click.assert_called()

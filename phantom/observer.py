@@ -35,11 +35,16 @@ def observe(browser: BrowserInterface, step: int = 0, screenshot: bool = True) -
     """
     browser._ok()
 
-    # Wait briefly for any in-progress navigation to settle
+    # Wait for page to settle before observing
     try:
         browser.page.wait_for_load_state("domcontentloaded", timeout=5000)
     except Exception:
         pass
+    # Also try networkidle for SPAs (short timeout — don't block on long-polling)
+    try:
+        browser.page.wait_for_load_state("networkidle", timeout=3000)
+    except Exception:
+        pass  # Many pages never reach networkidle — that's fine
 
     try:
         url = browser.url

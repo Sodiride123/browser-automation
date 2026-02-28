@@ -81,8 +81,9 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
         elif action == "click":
             selector = params.get("selector", "")
             _ensure_visible(browser, selector)
+            url_before = _safe_url(browser)
             _click_with_healing(browser, selector)
-            time.sleep(0.5)
+            _wait_after_click(browser, url_before)
             return f"Clicked: {selector}"
 
         elif action == "fill":
@@ -208,6 +209,29 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
 
     except Exception as e:
         return f"ERROR: {action} failed — {type(e).__name__}: {e}"
+
+
+def _safe_url(browser: BrowserInterface) -> str:
+    """Get browser URL safely (may fail during navigation)."""
+    try:
+        return browser.url
+    except Exception:
+        return ""
+
+
+def _wait_after_click(browser: BrowserInterface, url_before: str):
+    """Smart post-click wait: short wait if same page, load wait if navigated."""
+    time.sleep(0.3)
+    url_after = _safe_url(browser)
+    if url_after and url_before and url_after != url_before:
+        # Click triggered navigation — wait for new page to load
+        clear_selector_cache()
+        try:
+            browser.page.wait_for_load_state("domcontentloaded", timeout=10000)
+        except Exception:
+            pass  # Best effort — some pages don't fire load events cleanly
+    else:
+        time.sleep(0.2)  # Short pause for same-page interactions
 
 
 def _ensure_visible(browser: BrowserInterface, selector: str):

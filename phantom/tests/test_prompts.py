@@ -22,6 +22,11 @@ class TestSystemPrompt:
         assert '"action"' in SYSTEM_PROMPT
         assert '"params"' in SYSTEM_PROMPT
 
+    def test_has_history_trust_rule(self):
+        """Prompt should instruct agent to trust information from action history."""
+        assert "TRUST YOUR HISTORY" in SYSTEM_PROMPT
+        assert "do NOT navigate back" in SYSTEM_PROMPT
+
 
 class TestBuildUserMessage:
     """Tests for build_user_message."""

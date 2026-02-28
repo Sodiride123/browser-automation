@@ -82,6 +82,7 @@ Use selectors in this priority order (most reliable first):
 13. When you have enough information to answer the task, call done() IMMEDIATELY — do not keep extracting or scrolling
 14. The accessibility tree already contains most of the information you need — check it first before extracting
 15. IMPORTANT: If your thought mentions you "already have" or "can see" the answer, you MUST call done() in that same step
+16. TRUST YOUR HISTORY: Information from previous steps (in Action History) is reliable. If you already observed data on a previous page, use it — do NOT navigate back to re-verify. Combine observations from different steps to form your final answer
 
 ## Response Format
 Always respond with valid JSON only (no markdown, no explanation outside JSON):
@@ -155,7 +156,10 @@ def build_user_message(observation: dict, task: str, history: list[dict]) -> str
         result_str = h.get('result', 'ok')
         if len(result_str) > 150:
             result_str = result_str[:147] + "..."
-        history_text += f"\n{i+1}. {h.get('action', '?')}({_format_params(h.get('params', {}))}) → {result_str}"
+        thought_str = h.get('thought', '')
+        if len(thought_str) > 200:
+            thought_str = thought_str[:197] + "..."
+        history_text += f"\n{i+1}. [{thought_str}] {h.get('action', '?')}({_format_params(h.get('params', {}))}) → {result_str}"
 
     return USER_TURN_TEMPLATE.format(
         url=observation.get("url", "about:blank"),
