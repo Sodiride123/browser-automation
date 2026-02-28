@@ -18,6 +18,7 @@ Usage:
 """
 
 from phantom.agent import PhantomAgent
+from phantom.config import PhantomConfig
 from phantom.presets import get_preset_task, list_presets
 
-__all__ = ["PhantomAgent", "get_preset_task", "list_presets"]
+__all__ = ["PhantomAgent", "PhantomConfig", "get_preset_task", "list_presets"]
