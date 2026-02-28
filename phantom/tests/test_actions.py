@@ -1,24 +1,29 @@
 """Tests for phantom.actions module."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
 from phantom.actions import (
     execute_action,
     set_elements,
+    clear_selector_cache,
     _resolve_selector,
     _get_selector_candidates,
     _dismiss_overlay,
+    _is_transient_error,
+    _selector_cache,
 )
 
 
 @pytest.fixture(autouse=True)
 def clear_elements():
-    """Clear stored elements before each test."""
+    """Clear stored elements and selector cache before each test."""
     set_elements([])
+    clear_selector_cache()
     yield
     set_elements([])
+    clear_selector_cache()
 
 
 @pytest.fixture
@@ -308,3 +313,161 @@ class TestSelfHealing:
         ]
         result = execute_action(mock_browser, "fill", {"selector": "#email", "value": "test@test.com"})
         assert "Filled" in result
+
+
+class TestSelectorCache:
+    """Tests for the selector cache (cross-step memory)."""
+
+    def test_cache_records_successful_fallback(self, mock_browser):
+        """When a fallback selector succeeds, it's cached for next time."""
+        set_elements([
+            {
+                "index": 0,
+                "selector": "#btn",
+                "selectors": ["#btn", "button[name='submit']"],
+                "id": "btn",
+            },
+        ])
+        # Primary fails, fallback succeeds
+        mock_browser.click.side_effect = [
+            Exception("not found"),  # #btn fails
+            None,  # button[name='submit'] succeeds
+        ]
+        execute_action(mock_browser, "click", {"selector": "#btn"})
+
+        # Cache should map #btn -> button[name='submit']
+        from phantom.actions import _selector_cache
+        assert _selector_cache.get("#btn") == "button[name='submit']"
+
+    def test_cached_selector_tried_first(self, mock_browser):
+        """Cached selector should be the first candidate on retry."""
+        set_elements([
+            {
+                "index": 0,
+                "selector": "#btn",
+                "selectors": ["#btn", "button[name='submit']", "text=Submit"],
+                "id": "btn",
+            },
+        ])
+        # Simulate a cached resolution
+        from phantom.actions import _selector_cache, _cache_url
+        import phantom.actions
+        phantom.actions._selector_cache["#btn"] = "button[name='submit']"
+        phantom.actions._cache_url = "https://example.com"
+
+        candidates = _get_selector_candidates("#btn")
+        # Cached selector should be first
+        assert candidates[0] == "button[name='submit']"
+
+    def test_cache_cleared_on_navigation(self, mock_browser):
+        """Cache should be invalidated when navigating to a new page."""
+        import phantom.actions
+        phantom.actions._selector_cache["#btn"] = "button[name='submit']"
+        phantom.actions._cache_url = "https://example.com"
+
+        execute_action(mock_browser, "goto", {"url": "https://other.com"})
+
+        assert len(phantom.actions._selector_cache) == 0
+
+    def test_cache_cleared_on_go_back(self, mock_browser):
+        """Cache should be invalidated on go_back."""
+        import phantom.actions
+        phantom.actions._selector_cache["#btn"] = "fallback"
+        phantom.actions._cache_url = "https://example.com"
+
+        execute_action(mock_browser, "go_back", {})
+
+        assert len(phantom.actions._selector_cache) == 0
+
+    def test_cache_cleared_on_reload(self, mock_browser):
+        """Cache should be invalidated on reload."""
+        import phantom.actions
+        phantom.actions._selector_cache["#btn"] = "fallback"
+        phantom.actions._cache_url = "https://example.com"
+
+        execute_action(mock_browser, "reload", {})
+
+        assert len(phantom.actions._selector_cache) == 0
+
+    def test_cache_invalidated_on_url_change(self, mock_browser):
+        """Cache should be invalidated if browser URL changes between actions."""
+        import phantom.actions
+        phantom.actions._selector_cache["#btn"] = "fallback"
+        phantom.actions._cache_url = "https://old-page.com"
+
+        # Browser URL is now different
+        mock_browser.url = "https://new-page.com"
+        execute_action(mock_browser, "scroll_down", {"px": 500})
+
+        assert len(phantom.actions._selector_cache) == 0
+
+    def test_same_selector_not_cached(self, mock_browser):
+        """If primary selector succeeds, it's not redundantly cached."""
+        execute_action(mock_browser, "click", {"selector": "#btn"})
+
+        from phantom.actions import _selector_cache
+        assert "#btn" not in _selector_cache
+
+
+class TestTransientErrorRetry:
+    """Tests for smart retry on transient Playwright errors."""
+
+    def test_is_transient_detached(self):
+        assert _is_transient_error(Exception("Element is detached from DOM"))
+
+    def test_is_transient_context_destroyed(self):
+        assert _is_transient_error(Exception("Execution context was destroyed"))
+
+    def test_is_transient_intercepted(self):
+        assert _is_transient_error(Exception("Element click intercepted by another element"))
+
+    def test_is_not_transient_not_found(self):
+        assert not _is_transient_error(Exception("Element not found"))
+
+    def test_is_not_transient_timeout(self):
+        assert not _is_transient_error(Exception("Timeout 5000ms exceeded"))
+
+    def test_click_retries_on_transient(self, mock_browser):
+        """Click should retry once on transient errors before moving to fallback."""
+        mock_browser.click.side_effect = [
+            Exception("Element is detached"),  # first try
+            None,  # retry succeeds
+        ]
+        result = execute_action(mock_browser, "click", {"selector": "#btn"})
+        assert "Clicked" in result
+        assert mock_browser.click.call_count == 2
+
+    def test_fill_retries_on_transient(self, mock_browser):
+        """Fill should retry once on transient errors."""
+        mock_browser.fill.side_effect = [
+            Exception("Execution context was destroyed"),  # first try
+            None,  # retry succeeds
+        ]
+        result = execute_action(mock_browser, "fill", {"selector": "#input", "value": "test"})
+        assert "Filled" in result
+        assert mock_browser.fill.call_count == 2
+
+
+class TestEnsureVisible:
+    """Tests for element visibility pre-check."""
+
+    def test_offscreen_element_scrolled_into_view(self, mock_browser):
+        """Element below viewport should be scrolled into view before click."""
+        mock_browser.evaluate.return_value = True  # element is offscreen
+        execute_action(mock_browser, "click", {"selector": "#footer-btn"})
+        # Should have called scroll_to before click
+        mock_browser.scroll_to.assert_called_once()
+        mock_browser.click.assert_called()
+
+    def test_visible_element_not_scrolled(self, mock_browser):
+        """Element already visible should not trigger scroll."""
+        mock_browser.evaluate.return_value = False  # element is visible
+        execute_action(mock_browser, "click", {"selector": "#btn"})
+        mock_browser.scroll_to.assert_not_called()
+        mock_browser.click.assert_called()
+
+    def test_evaluate_error_doesnt_block(self, mock_browser):
+        """If visibility check fails, action should still proceed."""
+        mock_browser.evaluate.side_effect = Exception("evaluate failed")
+        result = execute_action(mock_browser, "click", {"selector": "#btn"})
+        assert "Clicked" in result

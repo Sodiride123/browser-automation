@@ -3,7 +3,9 @@ Action Executor — Translates LLM action dicts into browser_interface calls.
 
 Features:
 - Self-healing selectors: tries multiple selector strategies on failure
+- Selector cache: remembers which fallback selectors succeeded per page
 - Overlay auto-dismissal: detects and closes cookie banners, popups, modals
+- Smart retry for transient Playwright errors (element detached, navigation)
 - Detailed result strings for the LLM
 """
 
@@ -17,11 +19,41 @@ from phantom.config import SCREENSHOTS_DIR
 # Store interactive elements from the last observation for self-healing
 _last_elements: list[dict] = []
 
+# Selector cache: maps (original_selector -> successful_selector) per page URL.
+# Cleared on navigation. Speeds up retries on the same page.
+_selector_cache: dict[str, str] = {}
+_cache_url: str = ""  # URL when cache was last valid
+
 
 def set_elements(elements: list[dict]):
     """Store interactive elements from observer for self-healing selector resolution."""
     global _last_elements
     _last_elements = elements
+
+
+def clear_selector_cache():
+    """Clear the selector cache (called on navigation)."""
+    global _selector_cache, _cache_url
+    _selector_cache = {}
+    _cache_url = ""
+
+
+def _maybe_invalidate_cache(browser: BrowserInterface):
+    """Invalidate selector cache if the page URL has changed."""
+    global _cache_url
+    try:
+        current_url = browser.url
+    except Exception:
+        current_url = ""
+    if current_url != _cache_url:
+        clear_selector_cache()
+        _cache_url = current_url
+
+
+def _cache_selector(original: str, resolved: str):
+    """Record a successful selector resolution."""
+    if original != resolved:
+        _selector_cache[original] = resolved
 
 
 def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
@@ -30,19 +62,25 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
 
     Uses self-healing selectors: if the primary selector fails,
     tries alternative selectors from the elements list.
+    Includes selector caching and smart retry for transient errors.
     """
     action = action.lower().strip()
+
+    # Invalidate selector cache if URL changed since last action
+    _maybe_invalidate_cache(browser)
 
     try:
         if action == "goto":
             url = params.get("url", "")
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
+            clear_selector_cache()  # Navigation invalidates cache
             result = browser.goto(url, wait_until="load")
             return f"Navigated to {result['url']} (title: {result['title']}, status: {result['status']})"
 
         elif action == "click":
             selector = params.get("selector", "")
+            _ensure_visible(browser, selector)
             _click_with_healing(browser, selector)
             time.sleep(0.5)
             return f"Clicked: {selector}"
@@ -50,6 +88,7 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
         elif action == "fill":
             selector = params.get("selector", "")
             value = params.get("value", "")
+            _ensure_visible(browser, selector)
             _fill_with_healing(browser, selector, value)
             return f"Filled {selector} with '{value}'"
 
@@ -94,14 +133,17 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
             return _dismiss_overlay(browser)
 
         elif action == "go_back":
+            clear_selector_cache()
             browser.go_back()
             return f"Went back to {browser.url}"
 
         elif action == "go_forward":
+            clear_selector_cache()
             browser.go_forward()
             return f"Went forward to {browser.url}"
 
         elif action == "reload":
+            clear_selector_cache()
             browser.reload()
             return f"Reloaded {browser.url}"
 
@@ -168,37 +210,106 @@ def execute_action(browser: BrowserInterface, action: str, params: dict) -> str:
         return f"ERROR: {action} failed — {type(e).__name__}: {e}"
 
 
+def _ensure_visible(browser: BrowserInterface, selector: str):
+    """Scroll element into view if it exists but is outside the viewport."""
+    resolved = _resolve_selector(selector)
+    try:
+        # Check if element exists and is outside viewport
+        is_offscreen = browser.evaluate("""
+        (sel) => {
+            let el = null;
+            try { el = document.querySelector(sel); } catch(e) {}
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            return rect.bottom < 0 || rect.top > window.innerHeight;
+        }
+        """, resolved)
+        if is_offscreen:
+            browser.scroll_to(resolved)
+            time.sleep(0.3)
+    except Exception:
+        pass  # Best effort — don't block the action if this fails
+
+
 def _click_with_healing(browser: BrowserInterface, selector: str):
-    """Click with self-healing: try primary selector, then fallbacks."""
+    """Click with self-healing: try cached selector first, then primary, then fallbacks."""
     selectors = _get_selector_candidates(selector)
     last_error = None
     for sel in selectors:
         try:
             browser.click(sel, timeout=5000)
+            _cache_selector(selector, sel)
             return
         except Exception as e:
             last_error = e
+            # Retry once for transient errors (element detached during click)
+            if _is_transient_error(e):
+                time.sleep(0.3)
+                try:
+                    browser.click(sel, timeout=5000)
+                    _cache_selector(selector, sel)
+                    return
+                except Exception:
+                    pass
             continue
     raise last_error or RuntimeError(f"No valid selector found for: {selector}")
 
 
 def _fill_with_healing(browser: BrowserInterface, selector: str, value: str):
-    """Fill with self-healing: try primary selector, then fallbacks."""
+    """Fill with self-healing: try cached selector first, then primary, then fallbacks."""
     selectors = _get_selector_candidates(selector)
     last_error = None
     for sel in selectors:
         try:
             browser.fill(sel, value, timeout=5000)
+            _cache_selector(selector, sel)
             return
         except Exception as e:
             last_error = e
+            if _is_transient_error(e):
+                time.sleep(0.3)
+                try:
+                    browser.fill(sel, value, timeout=5000)
+                    _cache_selector(selector, sel)
+                    return
+                except Exception:
+                    pass
             continue
     raise last_error or RuntimeError(f"No valid selector found for: {selector}")
 
 
+def _is_transient_error(e: Exception) -> bool:
+    """Check if an error is transient (worth retrying after a brief pause)."""
+    msg = str(e).lower()
+    transient_patterns = [
+        "element is detached",
+        "execution context was destroyed",
+        "element is not attached",
+        "frame was detached",
+        "target closed",
+        "element is not visible",
+        "element is outside of the viewport",
+        "intercept",  # "element click intercepted"
+    ]
+    return any(p in msg for p in transient_patterns)
+
+
 def _get_selector_candidates(selector: str) -> list[str]:
-    """Build a list of selector candidates for self-healing resolution."""
-    candidates = [_resolve_selector(selector)]
+    """Build a list of selector candidates for self-healing resolution.
+
+    Priority order:
+    1. Cached successful selector (from previous self-healing on same page)
+    2. Primary resolved selector
+    3. Alternative selectors from the interactive elements list
+    """
+    candidates = []
+
+    # Check cache first — if we've resolved this selector before on this page, try that first
+    cached = _selector_cache.get(selector)
+    if cached:
+        candidates.append(cached)
+
+    candidates.append(_resolve_selector(selector))
 
     # If selector references an element by index, get its alternative selectors
     stripped = selector.strip()
