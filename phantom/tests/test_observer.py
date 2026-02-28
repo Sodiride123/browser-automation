@@ -9,6 +9,8 @@ from phantom.observer import (
     _build_text_summary,
     _detect_overlay,
     _extract_interactive_elements,
+    _inject_som_labels,
+    _remove_som_labels,
 )
 
 
@@ -182,3 +184,64 @@ class TestExtractInteractiveElements:
         browser.evaluate.side_effect = Exception("page gone")
         result = _extract_interactive_elements(browser)
         assert result == []
+
+
+class TestSomLabels:
+    """Tests for Set-of-Mark label injection/removal."""
+
+    def test_inject_with_elements(self):
+        browser = MagicMock()
+        elements = [
+            {"index": 0, "selector": "#btn", "selectors": ["#btn"], "visible": True},
+            {"index": 1, "selector": "input", "selectors": ["input"], "visible": True},
+        ]
+        _inject_som_labels(browser, elements)
+        browser.evaluate.assert_called_once()
+        # Check that label data was passed
+        call_args = browser.evaluate.call_args
+        label_data = call_args[0][1]
+        assert len(label_data) == 2
+        assert label_data[0]["index"] == 0
+        assert label_data[1]["index"] == 1
+
+    def test_inject_empty_elements(self):
+        browser = MagicMock()
+        _inject_som_labels(browser, [])
+        browser.evaluate.assert_not_called()
+
+    def test_inject_no_visible_elements(self):
+        browser = MagicMock()
+        elements = [
+            {"index": 0, "selector": "#btn", "selectors": ["#btn"], "visible": False},
+        ]
+        _inject_som_labels(browser, elements)
+        browser.evaluate.assert_not_called()
+
+    def test_inject_caps_at_50(self):
+        browser = MagicMock()
+        elements = [
+            {"index": i, "selector": f"#btn{i}", "selectors": [f"#btn{i}"], "visible": True}
+            for i in range(100)
+        ]
+        _inject_som_labels(browser, elements)
+        call_args = browser.evaluate.call_args
+        label_data = call_args[0][1]
+        assert len(label_data) == 50
+
+    def test_inject_error_handled(self):
+        browser = MagicMock()
+        browser.evaluate.side_effect = Exception("JS error")
+        elements = [{"index": 0, "selector": "#btn", "selectors": ["#btn"], "visible": True}]
+        # Should not raise
+        _inject_som_labels(browser, elements)
+
+    def test_remove_labels(self):
+        browser = MagicMock()
+        _remove_som_labels(browser)
+        browser.evaluate.assert_called_once()
+
+    def test_remove_labels_error_handled(self):
+        browser = MagicMock()
+        browser.evaluate.side_effect = Exception("JS error")
+        # Should not raise
+        _remove_som_labels(browser)

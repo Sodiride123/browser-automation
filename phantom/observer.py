@@ -51,23 +51,27 @@ def observe(browser: BrowserInterface, step: int = 0, screenshot: bool = True) -
     except Exception:
         title = ""
 
-    # Screenshot
+    # Interactive elements (extracted before screenshot for SoM labels)
+    interactive_elements = _extract_interactive_elements(browser)
+
+    # Screenshot (with optional Set-of-Mark labels)
     screenshot_path = None
     screenshot_b64 = None
     if screenshot:
         screenshot_path = str(SCREENSHOTS_DIR / f"step_{step:03d}.png")
         try:
+            # Inject SoM labels before screenshot, remove after
+            _inject_som_labels(browser, interactive_elements)
             browser.screenshot(screenshot_path)
+            _remove_som_labels(browser)
             with open(screenshot_path, "rb") as f:
                 screenshot_b64 = base64.b64encode(f.read()).decode("utf-8")
         except Exception:
+            _remove_som_labels(browser)  # cleanup on error
             screenshot_path = None
 
     # Accessibility tree (primary representation — compact, structured)
     a11y_tree = _get_accessibility_tree(browser)
-
-    # Interactive elements (used for selector resolution)
-    interactive_elements = _extract_interactive_elements(browser)
 
     # Detect overlays/popups
     has_overlay = _detect_overlay(browser)
@@ -263,3 +267,87 @@ def _detect_overlay(browser: BrowserInterface) -> bool:
         return browser.evaluate(js) or False
     except Exception:
         return False
+
+
+def _inject_som_labels(browser: BrowserInterface, elements: list[dict]) -> None:
+    """
+    Inject Set-of-Mark numbered labels onto interactive elements in the page.
+
+    Labels are small numbered badges overlaid on each visible interactive element,
+    allowing the vision model to reference elements by index number in screenshots.
+    Labels are injected as a single overlay container (id=phantom-som) so they can
+    be cleanly removed after the screenshot.
+    """
+    if not elements:
+        return
+
+    # Build label data for visible elements only
+    visible = [e for e in elements if e.get("visible", True)]
+    if not visible:
+        return
+
+    js = """
+    (labels) => {
+        // Remove any existing SoM overlay
+        const existing = document.getElementById('phantom-som');
+        if (existing) existing.remove();
+
+        const container = document.createElement('div');
+        container.id = 'phantom-som';
+        container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2147483647;';
+        document.body.appendChild(container);
+
+        for (const label of labels) {
+            let el = null;
+            // Try each selector until one matches
+            for (const sel of (label.selectors || [label.selector])) {
+                try { el = document.querySelector(sel); } catch(e) {}
+                if (el) break;
+            }
+            if (!el) continue;
+
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            if (rect.top > window.innerHeight || rect.bottom < 0) continue;
+
+            const badge = document.createElement('div');
+            badge.className = 'phantom-som-label';
+            badge.textContent = label.index;
+            badge.style.cssText = `
+                position:fixed;
+                left:${Math.max(0, rect.left - 2)}px;
+                top:${Math.max(0, rect.top - 2)}px;
+                min-width:18px;
+                height:18px;
+                line-height:18px;
+                padding:0 3px;
+                font-size:11px;
+                font-weight:bold;
+                font-family:Arial,sans-serif;
+                color:white;
+                background:rgba(220,38,38,0.9);
+                border-radius:9px;
+                text-align:center;
+                pointer-events:none;
+                box-shadow:0 1px 3px rgba(0,0,0,0.3);
+            `;
+            container.appendChild(badge);
+        }
+    }
+    """
+    try:
+        label_data = [
+            {"index": e["index"], "selector": e.get("selector", ""), "selectors": e.get("selectors", [])}
+            for e in visible[:50]  # Cap at 50 labels to avoid visual clutter
+        ]
+        browser.evaluate(js, label_data)
+    except Exception:
+        pass
+
+
+def _remove_som_labels(browser: BrowserInterface) -> None:
+    """Remove Set-of-Mark labels from the page."""
+    try:
+        browser.evaluate("(() => { const el = document.getElementById('phantom-som'); if (el) el.remove(); })()")
+    except Exception:
+        pass

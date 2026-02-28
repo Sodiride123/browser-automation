@@ -64,7 +64,7 @@ phantom/
 ```
 
 ## Pending Items
-- Push to GitHub (need token refresh — 3 local commits ahead)
+- ~~Push to GitHub~~ DONE — token refreshed from /dev/shm/mcp-token, all 3 commits pushed (6edd0f5)
 - Merge with Nova's parallel implementation if needed
 - Set-of-Mark screenshots — overlay numbered labels on elements
 - Action caching — cache resolved selectors for repeat tasks
