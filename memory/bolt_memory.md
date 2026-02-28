@@ -2,13 +2,30 @@
 
 ## Session Log
 
+### Session 7 - 2026-02-28
+- Comprehensive E2E testing — all passed:
+  - Wikipedia extraction: 2 steps (a11y tree gives answer immediately)
+  - httpbin form fill (name, radio, checkbox, submit): 6 steps
+  - HN multi-page navigation: 7 steps (self-recovered from ambiguous "More" link → navigated directly to ?p=2)
+- No code changes needed — agent is robust across diverse scenarios
+- Noted: text= selector ambiguity on pages with common words (e.g. "More") — agent handles it via self-recovery
+
+### Session 6 - 2026-02-28
+- Improved stagnation detection: catches same non-progress action type repeated 4+ times
+  - Non-progress actions: extract_text, extract_html, extract_attribute, scroll_down, scroll_up, screenshot, wait
+  - Fixes issue where agent would loop on extract_html with different selectors
+- Hardened LLM prompts: rules for calling done() immediately, no excessive extraction
+- 169 tests all passing (6 new stagnation tests)
+- E2E: Bing search completes in 16 steps (was timing out at 30+)
+- Pushed to GitHub (1ec8be9)
+
 ### Session 5 - 2026-02-28
 - GitHub push success! Refreshed token from /dev/shm/mcp-token, all commits synced
 - Added Set-of-Mark (SoM) screenshots: red numbered badges on interactive elements
   - Injected before screenshot, removed after; caps at 50 labels
   - Tested on HN (100 elements) and example.com
 - 163 tests all passing (7 new SoM tests)
-- 4 commits on GitHub: bed21d8, 85c7442, ab44bcf, 6edd0f5, 3ccfaab
+- 5 commits on GitHub: bed21d8, 85c7442, ab44bcf, 6edd0f5, 3ccfaab
 
 ### Session 4 - 2026-02-28
 - Created comprehensive test suite: 156 tests across 7 test files
@@ -66,7 +83,7 @@ phantom/
 ├── presets.py           # Task presets (screenshot, extract, search, etc.)
 ├── slack_handler.py     # Phantom Slack identity + command handler
 ├── vnc.py               # VNC/human override utilities
-├── tests/               # 156 unit tests
+├── tests/               # 169 unit tests
 ├── browser_data/        # Persistent browser cache
 └── screenshots/         # Step screenshots
 ```
@@ -74,6 +91,7 @@ phantom/
 ## Pending Items
 - ~~Push to GitHub~~ DONE
 - ~~Set-of-Mark screenshots~~ DONE (3ccfaab)
+- ~~Stagnation detection~~ DONE (1ec8be9)
 - Merge with Nova's parallel implementation if needed
 - Action caching — cache resolved selectors for repeat tasks
 - Token refresh: read GitHub token from /dev/shm/mcp-token (Github key, access_token field)
