@@ -1,0 +1,16 @@
+# NinjaSquad Agent Team - Dependencies
+# Note: MCPs are pre-configured in each agent's sandbox VM
+
+# Slack messaging & formatting
+requests>=2.28.0
+slackify-markdown>=0.2.0
+
+# S3 channel cache (also installs botocore)
+boto3>=1.28.0
+
+# Browser automation (browser_interface.py)
+playwright>=1.40.0
+
+# MCP client (utils/mcp.py)
+mcp>=1.0.0
+httpx>=0.24.0

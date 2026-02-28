@@ -1,0 +1,977 @@
+"""
+Agent Team Orchestrator
+
+Simple orchestrator that runs Claude Code for the configured agent.
+Agent identity is read from ~/.agent_settings.json config file.
+Agent behavior is defined by their markdown spec files in agent-docs/.
+
+Usage:
+    python orchestrator.py                    # Run work + monitor in parallel
+    python orchestrator.py --task "Do X"      # Run single task
+    python orchestrator.py --list             # List all agents
+    python orchestrator.py --test             # Run capability tests
+
+When run without --task, starts two parallel processes:
+  1. Work mode: Claude agent does work (check Slack, sync, update memory)
+  2. Monitor mode: Watches for Slack mentions and responds (45s + 5s jitter)
+"""
+
+import subprocess
+import argparse
+import json
+import sys
+import shutil
+import logging
+import re
+import string
+from pathlib import Path
+from datetime import datetime
+
+# Import centralized agent configuration
+from agents_config import AGENTS
+
+REPO_ROOT = Path(__file__).parent
+CONFIG_PATH = Path.home() / ".agent_settings.json"
+LOCK_FILE = REPO_ROOT / ".orchestrator.lock"
+LOG_DIR = Path("/workspace/logs")
+MCP_TOKEN_FILE = Path("/dev/shm/mcp-token")
+SETTINGS_FILE = REPO_ROOT / "settings.json"
+CLAUDE_SETTINGS_FILE = Path.home() / ".claude" / "settings.json"
+
+# Settings template - variables filled from /root/.claude/settings.json
+SETTINGS_TEMPLATE = string.Template("""{
+    "env": {
+        "ANTHROPIC_AUTH_TOKEN": "$auth_token",
+        "ANTHROPIC_BASE_URL": "$base_url",
+        "ANTHROPIC_MODEL": "$model"
+    },
+    "permissions": {
+        "allow": [
+            "Edit(**)","Bash"
+        ]
+    }
+}
+""")
+
+# Ensure log directory exists
+LOG_DIR.mkdir(exist_ok=True)
+
+
+def setup_logging(agent_name: str = "orchestrator") -> logging.Logger:
+    """Setup logging to both file and console."""
+    # Create logger
+    logger = logging.getLogger("orchestrator")
+    logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
+    
+    # Create formatters
+    file_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_formatter = logging.Formatter('%(message)s')
+    
+    # File handler - daily rotating log file
+    log_filename = LOG_DIR / f"{agent_name}_{datetime.now().strftime('%Y-%m-%d')}.log"
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(file_formatter)
+    
+    # Console handler - only INFO and above
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
+    
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+
+def log_and_print(msg: str, level: str = "info", logger: logging.Logger = None, file=None):
+    """Print a message and also log it. Works before or after logger is set up."""
+    # Always print to console (or specified file)
+    print(msg, file=file)
+    # Also log if logger is available
+    if logger:
+        clean_msg = msg.strip()
+        if clean_msg:
+            getattr(logger, level, logger.info)(clean_msg)
+
+
+SANDBOX_METADATA_FILE = Path("/dev/shm/sandbox_metadata.json")
+DEFAULT_MODEL = "claude-opus-4-6"
+
+
+def get_selected_model(logger: logging.Logger = None) -> str:
+    """
+    Read litellm_selected_model from /dev/shm/sandbox_metadata.json if present.
+    Falls back to DEFAULT_MODEL ('claude-opus-4-6') if the file
+    doesn't exist, is unreadable, or doesn't contain litellm_selected_model.
+    
+    Returns:
+        Model name string
+    """
+    _logger = logger or setup_logging("orchestrator")
+    
+    if not SANDBOX_METADATA_FILE.exists():
+        _logger.debug(f"sandbox_metadata not found at {SANDBOX_METADATA_FILE}, using default model: {DEFAULT_MODEL}")
+        return DEFAULT_MODEL
+    
+    try:
+        with open(SANDBOX_METADATA_FILE, 'r') as f:
+            meta = json.load(f)
+        
+        model = meta.get("litellm_selected_model", "").strip()
+        if model:
+            _logger.info(f"🎯 Model from sandbox_metadata: {model}")
+            return model
+        else:
+            _logger.debug(f"litellm_selected_model not set in sandbox_metadata, using default: {DEFAULT_MODEL}")
+            return DEFAULT_MODEL
+    except (json.JSONDecodeError, IOError, KeyError) as e:
+        _logger.warning(f"⚠️  Failed to read sandbox_metadata: {e}, using default: {DEFAULT_MODEL}")
+        return DEFAULT_MODEL
+
+
+def ensure_settings_file(logger: logging.Logger = None) -> bool:
+    """
+    Ensure settings.json exists in the project directory and that
+    /root/.claude/settings.json uses the correct model.
+    
+    Model selection priority:
+      1. litellm_selected_model from /dev/shm/sandbox_metadata.json (if present)
+      2. Default: claude-opus-4-6
+    
+    Always regenerates settings.json to pick up model changes.
+    Also updates /root/.claude/settings.json with the selected model.
+    
+    Returns:
+        True if settings.json exists or was created, False otherwise
+    """
+    _logger = logger or setup_logging("orchestrator")
+    
+    # Determine model
+    model = get_selected_model(_logger)
+    
+    if not CLAUDE_SETTINGS_FILE.exists():
+        _logger.error(f"❌ Source settings not found: {CLAUDE_SETTINGS_FILE}")
+        _logger.error("Cannot auto-generate settings.json. Please create it manually.")
+        return False
+    
+    try:
+        with open(CLAUDE_SETTINGS_FILE, 'r') as f:
+            claude_settings = json.load(f)
+        
+        env = claude_settings.get("env", {})
+        auth_token = env.get("ANTHROPIC_AUTH_TOKEN", "")
+        base_url = env.get("ANTHROPIC_BASE_URL", "")
+        
+        if not auth_token or not base_url:
+            _logger.error("❌ Missing required fields in source settings (auth_token or base_url)")
+            return False
+        
+        # --- Update /root/.claude/settings.json with selected model ---
+        current_model = env.get("ANTHROPIC_MODEL", "")
+        if current_model != model:
+            claude_settings["env"]["ANTHROPIC_MODEL"] = model
+            with open(CLAUDE_SETTINGS_FILE, 'w') as f:
+                json.dump(claude_settings, f, indent=4)
+            _logger.info(f"🔄 Updated {CLAUDE_SETTINGS_FILE} model: {current_model} → {model}")
+        
+        # --- Generate project settings.json (always regenerate) ---
+        settings_content = SETTINGS_TEMPLATE.substitute(
+            auth_token=auth_token,
+            base_url=base_url,
+            model=model,
+        )
+        
+        with open(SETTINGS_FILE, 'w') as f:
+            f.write(settings_content)
+        
+        _logger.info(f"✅ Generated {SETTINGS_FILE}")
+        _logger.info(f"   Model: {model}")
+        _logger.info(f"   Base URL: {base_url}")
+        return True
+        
+    except (json.JSONDecodeError, IOError, KeyError) as e:
+        _logger.error(f"❌ Failed to generate settings.json: {e}")
+        return False
+
+
+
+
+
+def get_github_token() -> str | None:
+    """Read GitHub token from /dev/shm/mcp-token file."""
+    if not MCP_TOKEN_FILE.exists():
+        return None
+    
+    try:
+        content = MCP_TOKEN_FILE.read_text()
+        # Parse Github={"access_token": "..."} format
+        for line in content.strip().split('\n'):
+            if line.startswith('Github='):
+                json_str = line[7:]  # Remove 'Github=' prefix
+                data = json.loads(json_str)
+                return data.get('access_token')
+    except (json.JSONDecodeError, IOError, KeyError) as e:
+        return None
+    
+    return None
+
+
+def login_github_cli(logger: logging.Logger) -> bool:
+    """Login to GitHub CLI using token from /dev/shm/mcp-token."""
+    token = get_github_token()
+    
+    if not token:
+        logger.warning("⚠️  No GitHub token found in /dev/shm/mcp-token")
+        return False
+    
+    # Check if gh is installed
+    if not shutil.which("gh"):
+        logger.warning("⚠️  GitHub CLI (gh) not installed")
+        return False
+    
+    try:
+        # Login using the token via stdin
+        logger.info("🔐 Logging into GitHub CLI...")
+        result = subprocess.run(
+            ["gh", "auth", "login", "--with-token"],
+            input=token,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            # Verify login
+            verify = subprocess.run(
+                ["gh", "auth", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if verify.returncode == 0:
+                # Extract username from status output
+                logger.info("✅ GitHub CLI authenticated successfully")
+                logger.debug(f"GitHub status: {verify.stdout.strip()}")
+                return True
+            else:
+                logger.warning(f"⚠️  GitHub auth verification failed: {verify.stderr}")
+                return False
+        else:
+            logger.warning(f"⚠️  GitHub login failed: {result.stderr}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logger.error("❌ GitHub login timed out")
+        return False
+    except Exception as e:
+        logger.error(f"❌ GitHub login error: {e}")
+        return False
+
+
+def check_single_instance():
+    """
+    Ensure only one instance of the orchestrator is running.
+    Uses a lock file with PID to detect and prevent duplicate instances.
+    
+    Raises:
+        SystemExit if another instance is already running
+    """
+    import os
+    
+    current_pid = os.getpid()
+    
+    if LOCK_FILE.exists():
+        try:
+            with open(LOCK_FILE, 'r') as f:
+                lock_data = json.load(f)
+            
+            old_pid = lock_data.get('pid')
+            old_agent = lock_data.get('agent', 'unknown')
+            old_started = lock_data.get('started', 'unknown')
+            old_heartbeat = lock_data.get('heartbeat', old_started)
+            
+            # Check if the old process is still running
+            if old_pid:
+                process_exists = False
+                is_orchestrator = False
+                
+                try:
+                    # Send signal 0 to check if process exists
+                    os.kill(old_pid, 0)
+                    process_exists = True
+                    
+                    # Verify it's actually an orchestrator process (not PID reuse)
+                    try:
+                        with open(f'/proc/{old_pid}/cmdline', 'r') as f:
+                            cmdline = f.read()
+                            is_orchestrator = 'orchestrator.py' in cmdline
+                    except (IOError, FileNotFoundError):
+                        # Can't read cmdline (maybe not Linux), assume it's orchestrator
+                        is_orchestrator = True
+                        
+                except OSError:
+                    # Process doesn't exist
+                    process_exists = False
+                
+                # Also check heartbeat staleness (if no heartbeat for 10+ minutes, consider stale)
+                heartbeat_stale = False
+                try:
+                    heartbeat_time = datetime.fromisoformat(old_heartbeat)
+                    if (datetime.now() - heartbeat_time).total_seconds() > 600:  # 10 minutes
+                        heartbeat_stale = True
+                except (ValueError, TypeError):
+                    pass  # Can't parse heartbeat, ignore
+                
+                if process_exists and is_orchestrator and not heartbeat_stale:
+                    # Process exists and is orchestrator - another instance is running
+                    _early_logger = setup_logging("orchestrator")
+                    _early_logger.error("=" * 70)
+                    _early_logger.error("ERROR: Another orchestrator instance is already running!")
+                    _early_logger.error("=" * 70)
+                    _early_logger.error(f"   Existing instance:")
+                    _early_logger.error(f"   - PID: {old_pid}")
+                    _early_logger.error(f"   - Agent: {old_agent}")
+                    _early_logger.error(f"   - Started: {old_started}")
+                    _early_logger.error(f"   - Last heartbeat: {old_heartbeat}")
+                    _early_logger.error(f"   To stop the existing instance:")
+                    _early_logger.error(f"   - kill {old_pid}")
+                    _early_logger.error("   - Or: pkill -f 'orchestrator.py'")
+                    _early_logger.error(f"   To force remove the lock (if process is stuck):")
+                    _early_logger.error(f"   - rm {LOCK_FILE}")
+                    _early_logger.error("=" * 70)
+                    sys.exit(1)
+                else:
+                    # Stale lock - process doesn't exist, wrong process, or heartbeat stale
+                    reason = []
+                    if not process_exists:
+                        reason.append(f"PID {old_pid} no longer running")
+                    elif not is_orchestrator:
+                        reason.append(f"PID {old_pid} is not orchestrator (PID reuse)")
+                    elif heartbeat_stale:
+                        reason.append(f"heartbeat stale since {old_heartbeat}")
+                    _early_logger = setup_logging("orchestrator")
+                    _early_logger.info(f"Removing stale lock file ({', '.join(reason)})")
+        except (json.JSONDecodeError, IOError, KeyError):
+            # Corrupted lock file, remove it
+            _early_logger = setup_logging("orchestrator")
+            _early_logger.warning("Removing corrupted lock file")
+    
+    # Create/update lock file with current process info
+    lock_data = {
+        'pid': current_pid,
+        'agent': None,  # Will be updated after agent is determined
+        'started': datetime.now().isoformat(),
+        'heartbeat': datetime.now().isoformat(),
+    }
+    
+    try:
+        with open(LOCK_FILE, 'w') as f:
+            json.dump(lock_data, f)
+    except IOError as e:
+        _early_logger = setup_logging("orchestrator")
+        _early_logger.warning(f"Could not create lock file: {e}")
+
+
+def update_lock_file(agent_name: str = None):
+    """Update the lock file with the agent name and refresh heartbeat."""
+    if LOCK_FILE.exists():
+        try:
+            with open(LOCK_FILE, 'r') as f:
+                lock_data = json.load(f)
+            if agent_name:
+                lock_data['agent'] = agent_name
+            lock_data['heartbeat'] = datetime.now().isoformat()
+            with open(LOCK_FILE, 'w') as f:
+                json.dump(lock_data, f)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+
+def update_heartbeat():
+    """Update just the heartbeat timestamp in the lock file."""
+    update_lock_file(agent_name=None)
+
+
+def remove_lock_file():
+    """Remove the lock file when orchestrator exits."""
+    try:
+        if LOCK_FILE.exists():
+            LOCK_FILE.unlink()
+    except IOError:
+        pass
+
+
+def load_config() -> dict:
+    """Load agent configuration from ~/.agent_settings.json"""
+    if not CONFIG_PATH.exists():
+        return {}
+    
+    try:
+        with open(CONFIG_PATH, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        _early_logger = setup_logging("orchestrator")
+        _early_logger.warning(f"Could not read config: {e}")
+        return {}
+
+
+def get_agent_from_config() -> dict:
+    """
+    Get the agent configuration from the config file.
+    
+    Returns:
+        Agent dict with name, role, emoji, spec
+        
+    Raises:
+        SystemExit if no agent is configured
+    """
+    config = load_config()
+    agent_id = config.get("default_agent", "").lower()
+    
+    _early_logger = setup_logging("orchestrator")
+    
+    if not agent_id:
+        _early_logger.error("❌ ERROR: No agent configured!")
+        _early_logger.error("")
+        _early_logger.error("The orchestrator requires an agent identity to be set in the config file.")
+        _early_logger.error(f"Config file: {CONFIG_PATH}")
+        _early_logger.error("")
+        _early_logger.error("💡 To configure your agent, run:")
+        _early_logger.error("   python slack_interface.py config --set-agent nova")
+        _early_logger.error("")
+        _early_logger.error(f"🤖 Available agents: {', '.join(AGENTS.keys())}")
+        sys.exit(1)
+    
+    if agent_id not in AGENTS:
+        _early_logger.error(f"❌ ERROR: Invalid agent '{agent_id}' in config!")
+        _early_logger.error("")
+        _early_logger.error(f"💡 Valid agents: {', '.join(AGENTS.keys())}")
+        _early_logger.error("")
+        _early_logger.error("💡 To fix, run:")
+        _early_logger.error("   python slack_interface.py config --set-agent nova")
+        sys.exit(1)
+    
+    return AGENTS[agent_id]
+
+
+def read_file(path: Path) -> str:
+    """Read file content or return empty string."""
+    return path.read_text() if path.exists() else ""
+
+
+def build_prompt(agent: dict, task: str = "", use_references: bool = True) -> str:
+    """Build the prompt for an agent from their spec and memory.
+    
+    Args:
+        agent: Agent configuration dict
+        task: Optional specific task
+        use_references: If True, use file references instead of embedding content (saves ~100KB)
+    """
+    
+    # Get default channel from config
+    config = load_config()
+    channel = config.get("default_channel_name", config.get("default_channel", "#your-channel"))
+    default_task = f"Check Slack {channel}, sync with team, do your work, update your memory file."
+    
+    if use_references:
+        # OPTIMIZED: Use file references instead of embedding content
+        # This reduces prompt size from ~100KB to ~3KB
+        memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
+        prd = read_file(REPO_ROOT / "agent-docs" / "PRD.md")
+        
+        return f"""# You are {agent['name']} {agent['emoji']}
+
+## Your Identity
+- **Name:** {agent['name']}
+- **Role:** {agent['role']}
+- **Emoji:** {agent['emoji']}
+
+---
+
+## Documentation Files (READ THESE FIRST)
+
+Before starting work, read these files for full context:
+
+1. **Your Specification:** `cat agent-docs/{agent['spec']}`
+2. **Architecture:** `cat agent-docs/ARCHITECTURE.md`
+3. **Communication Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
+4. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
+5. **Onboarding Guide:** `cat agent-docs/ONBOARDING.md`
+
+---
+
+## Current PRD
+
+{prd if prd else "No PRD yet. The PM agent needs to interview stakeholders to create it. See agent-docs/PRD.md"}
+
+---
+
+## Your Memory
+
+{memory if memory else "No previous memory. This is your first session."}
+
+---
+
+## Quick Reference
+
+**Slack Commands:**
+- `python slack_interface.py read -l 50` - Read recent messages
+- `python slack_interface.py say "message"` - Post updates
+- `python slack_interface.py config` - Check configuration
+
+**GitHub Commands:**
+- `gh issue list` - List issues
+- `gh issue create --title "..." --body "..."` - Create issue
+
+**Tavily Web Research** (reads credentials from settings.json automatically):
+- `from tavily_client import Tavily; t = Tavily()` - Initialize
+- `t.search("query")`, `t.extract(["url"])`, `t.crawl("url")`, `t.research("topic")`
+- 5 tools: search (~1s), extract (~3s), crawl (~10s), map (~3s), research (~30-60s)
+
+---
+
+## Headless Mode
+
+You are running in **headless CLI mode** - there is no human at the terminal.
+
+**Communicate via Slack only** using `python slack_interface.py`.
+
+## ⚡ Slack Communication Protocol
+
+- **Keep messages SHORT** — 2-4 sentences max. No walls of text. Be direct.
+- **Reply in threads** — If someone asks you a question or requests an update, reply in the thread (`-t thread_ts`), not as a new message.
+- **Sprint updates** — Post status updates as a top-level message titled "Sprint N Update" (e.g. "Sprint 1 Update"). All agents reply to that same thread with their individual updates.
+- **No duplicate updates** — Don't create new top-level messages for updates. Find the existing Sprint thread and reply there.
+
+**Workflow:**
+1. Read your spec file first: `cat agent-docs/{agent['spec']}`
+2. Read Slack for context
+3. Check your assigned GitHub issues: `gh issue list --assignee @me`
+4. Do your work (focus on assigned issues)
+5. Comment on GitHub issues with progress: `gh issue comment <number> --body "..."`
+6. Post updates to Slack (short, in threads)
+7. Commit changes to git
+8. Update your memory file (`memory/{agent['name'].lower()}_memory.md`)
+
+---
+
+## Current Task
+
+{task if task else default_task}
+"""
+    else:
+        # LEGACY: Embed full content (large prompt ~100KB)
+        spec = read_file(REPO_ROOT / "agent-docs" / agent["spec"])
+        memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
+        prd = read_file(REPO_ROOT / "agent-docs" / "PRD.md")
+        protocol = read_file(REPO_ROOT / "agent-docs" / "AGENT_PROTOCOL.md")
+        slack_docs = read_file(REPO_ROOT / "agent-docs" / "SLACK_INTERFACE.md")
+        architecture = read_file(REPO_ROOT / "agent-docs" / "ARCHITECTURE.md")
+        
+        return f"""# You are {agent['name']} {agent['emoji']}
+
+## Your Identity
+- **Name:** {agent['name']}
+- **Role:** {agent['role']}
+- **Emoji:** {agent['emoji']}
+
+---
+
+## Your Specification
+
+{spec}
+
+---
+
+## Architecture
+
+{architecture}
+
+---
+
+## Communication Protocol
+
+{protocol}
+
+---
+
+## Slack Interface Documentation
+
+{slack_docs}
+
+---
+
+## Current PRD
+
+{prd if prd else "No PRD yet. The PM agent needs to interview stakeholders to create it."}
+
+---
+
+## Your Memory
+
+{memory if memory else "No previous memory. This is your first session."}
+
+---
+
+## Headless Mode
+
+You are running in **headless CLI mode** - there is no human at the terminal.
+
+**Communicate via Slack only** using `python slack_interface.py`:
+- `python slack_interface.py read -l 50` - Read recent messages
+- `python slack_interface.py say "message"` - Post updates
+
+**Tavily Web Research** (reads credentials from settings.json automatically):
+- `from tavily_client import Tavily; t = Tavily()` - Initialize
+- `t.search("query")`, `t.extract(["url"])`, `t.crawl("url")`, `t.research("topic")`
+
+## ⚡ Slack Communication Protocol
+
+- **Keep messages SHORT** — 2-4 sentences max. No walls of text. Be direct.
+- **Reply in threads** — If someone asks you a question or requests an update, reply in the thread (`-t thread_ts`), not as a new message.
+- **Sprint updates** — Post status updates as a top-level message titled "Sprint N Update" (e.g. "Sprint 1 Update"). All agents reply to that same thread with their individual updates.
+- **No duplicate updates** — Don't create new top-level messages for updates. Find the existing Sprint thread and reply there.
+
+**Workflow:**
+1. Read Slack for context
+2. Check your assigned GitHub issues: `gh issue list --assignee @me`
+3. Do your work (focus on assigned issues)
+4. Comment on GitHub issues with progress: `gh issue comment <number> --body "..."`
+5. Post updates to Slack (short, in threads)
+6. Commit changes to git
+7. Update your memory file (`memory/{agent['name'].lower()}_memory.md`)
+
+---
+
+## Current Task
+
+{task if task else default_task}
+"""
+
+
+def run_agent(agent: dict, task: str = "") -> None:
+    """Run Claude Code for a single agent in headless autonomous mode."""
+    # Setup logger for this subprocess
+    agent_logger = setup_logging(agent['name'].lower())
+    
+    agent_logger.info(f"\n{'='*60}")
+    agent_logger.info(f"{agent['emoji']} Starting {agent['name']} ({agent['role']})")
+    agent_logger.info(f"{'='*60}\n")
+    
+    prompt = build_prompt(agent, task)
+    
+    # Run Claude Code CLI
+    # -p: Print mode (non-interactive)
+    # Permissions are configured in ~/.claude/settings.json
+    # Timeout: 15 minutes (900 seconds) to allow for complex tasks
+    try:
+        result = subprocess.run(
+            [str(REPO_ROOT / "claude-wrapper.sh"), "-c", "-p", prompt],
+            cwd=str(REPO_ROOT),
+            timeout=900,  # 15 minutes
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout:
+            agent_logger.info(f"Claude output:\n{result.stdout}")
+        if result.stderr:
+            agent_logger.warning(f"Claude stderr:\n{result.stderr}")
+    except subprocess.TimeoutExpired:
+        agent_logger.warning("⏰ Claude CLI timed out after 15 minutes")
+    except FileNotFoundError:
+        agent_logger.error("❌ Claude CLI not found!")
+        agent_logger.error("Claude CLI is REQUIRED to run agents.")
+        agent_logger.error("Please install Claude Code CLI first.")
+        sys.exit(1)
+    
+    agent_logger.info(f"\n✅ {agent['name']} completed\n")
+
+
+def run_capability_tests() -> bool:
+    """
+    Run all capability tests and report results.
+    
+    Returns:
+        True if all tests pass, False otherwise
+    """
+    test_logger = setup_logging("orchestrator")
+    
+    test_logger.info("\n" + "=" * 60)
+    test_logger.info("🧪 CAPABILITY TESTS")
+    test_logger.info("=" * 60)
+    
+    results = {}
+    all_passed = True
+    
+    # Test 1: Config file
+    test_logger.info("\n📋 Test 1: Configuration File")
+    config = load_config()
+    if config.get("default_agent"):
+        test_logger.info(f"   ✅ Agent configured: {config.get('default_agent')}")
+        results["config"] = True
+    else:
+        test_logger.error("   ❌ No agent configured")
+        results["config"] = False
+        all_passed = False
+    
+    if config.get("default_channel"):
+        test_logger.info(f"   ✅ Channel configured: {config.get('default_channel')}")
+    else:
+        test_logger.warning("   ⚠️  No default channel configured")
+    
+    # Test 2: GitHub CLI
+    test_logger.info("\n📋 Test 2: GitHub CLI")
+    if shutil.which("gh"):
+        try:
+            result = subprocess.run(
+                ["gh", "auth", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                test_logger.info("   ✅ GitHub CLI authenticated")
+                results["github"] = True
+            else:
+                test_logger.error("   ❌ GitHub CLI not authenticated")
+                results["github"] = False
+                all_passed = False
+        except Exception as e:
+            test_logger.error(f"   ❌ GitHub test error: {e}")
+            results["github"] = False
+            all_passed = False
+    else:
+        test_logger.error("   ❌ GitHub CLI (gh) not installed")
+        results["github"] = False
+        all_passed = False
+    
+    # Test 3: Claude CLI (MANDATORY)
+    test_logger.info("\n📋 Test 3: Claude CLI (REQUIRED)")
+    if shutil.which("claude"):
+        test_logger.info("   ✅ Claude CLI installed")
+        results["claude"] = True
+    else:
+        test_logger.error("   ❌ Claude CLI not installed")
+        test_logger.warning("   ⚠️  Claude CLI is REQUIRED to run agents")
+        results["claude"] = False
+        all_passed = False
+    
+    # Test 4: Project Files
+    test_logger.info("\n📋 Test 4: Project Files")
+    required_files = [
+        "slack_interface.py",
+        "agent-docs/ONBOARDING.md",
+        "agent-docs/AGENT_PROTOCOL.md",
+        "agent-docs/SLACK_INTERFACE.md",
+        "memory",
+    ]
+    files_ok = True
+    for f in required_files:
+        path = REPO_ROOT / f
+        if path.exists():
+            test_logger.info(f"   ✅ {f}")
+        else:
+            test_logger.error(f"   ❌ {f} missing")
+            files_ok = False
+            all_passed = False
+    results["files"] = files_ok
+    
+    # Summary
+    test_logger.info("\n" + "=" * 60)
+    test_logger.info("📊 TEST SUMMARY")
+    test_logger.info("=" * 60)
+    
+    for test, passed in results.items():
+        if passed is True:
+            status = "✅ PASS"
+        elif passed is False:
+            status = "❌ FAIL"
+        else:
+            status = "⚠️  SKIP"
+        test_logger.info(f"   {test:12} {status}")
+    
+    test_logger.info("")
+    if all_passed:
+        test_logger.info("🎉 All tests passed! Agent is ready to work.")
+    else:
+        test_logger.warning("⚠️  Some tests failed. Please fix issues before running agent.")
+    test_logger.info("=" * 60 + "\n")
+    
+    return all_passed
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Agent Team Orchestrator',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python orchestrator.py                    Run configured agent
+  python orchestrator.py --task "Do X"      Run with specific task
+  python orchestrator.py --list             List all agents
+  python orchestrator.py --test             Run capability tests
+
+Configuration:
+  Agent identity is read from ~/.agent_settings.json
+  Set with: python slack_interface.py config --set-agent nova
+        """
+    )
+    parser.add_argument("--task", "-t", default="", help="Specific task for the agent")
+    parser.add_argument("--list", "-l", action="store_true", help="List all available agents")
+    parser.add_argument("--test", action="store_true", help="Run capability tests")
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        success = run_capability_tests()
+        sys.exit(0 if success else 1)
+    
+    if args.list:
+        list_logger = setup_logging("orchestrator")
+        list_logger.info("\n📋 Available Agents:\n")
+        for agent_id, agent in AGENTS.items():
+            list_logger.info(f"  {agent['emoji']} {agent['name']:8} - {agent['role']}")
+        list_logger.info("")
+        
+        # Show current config
+        config = load_config()
+        current = config.get("default_agent", "")
+        if current:
+            list_logger.info(f"📌 Currently configured: {current}")
+        else:
+            list_logger.warning("⚠️  No agent configured. Run: python slack_interface.py config --set-agent <name>")
+        list_logger.info("")
+        return
+    
+    # Check for existing instance BEFORE doing anything else
+    check_single_instance()
+    
+    # Get agent from config first (needed for logging setup)
+    agent = get_agent_from_config()
+    
+    # Setup logging
+    logger = setup_logging(agent['name'].lower())
+    logger.info("=" * 60)
+    logger.info(f"Orchestrator starting for {agent['name']}")
+    logger.info("=" * 60)
+    
+    # Register cleanup handler to remove lock file on exit
+    import atexit
+    import signal
+    
+    atexit.register(remove_lock_file)
+    
+    # Start heartbeat thread to keep lock file fresh
+    import threading
+    
+    heartbeat_stop = threading.Event()
+    
+    def heartbeat_loop():
+        """Update lock file heartbeat every 60 seconds."""
+        while not heartbeat_stop.wait(60):  # Wait 60 seconds or until stopped
+            update_heartbeat()
+            logger.debug("Heartbeat updated")
+    
+    heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    heartbeat_thread.start()
+    
+    # Also handle SIGTERM and SIGINT to clean up lock file
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down...")
+        heartbeat_stop.set()  # Stop heartbeat thread
+        remove_lock_file()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Ensure settings.json exists (auto-generate from /root/.claude/settings.json if missing)
+    if not ensure_settings_file(logger):
+        logger.error("❌ Cannot start without settings.json. Exiting.")
+        sys.exit(1)
+    
+    # Login to GitHub CLI
+    login_github_cli(logger)
+    
+    # Update lock file with agent name
+    update_lock_file(agent['name'])
+    
+    # Show which agent we're running
+    config = load_config()
+    logger.info(f"Config: {CONFIG_PATH}")
+    logger.info(f"Agent: {agent['name']} ({agent['role']})")
+    if config.get("default_channel"):
+        logger.info(f"Channel: {config.get('default_channel')}")
+    log_file = LOG_DIR / f"{agent['name'].lower()}_{datetime.now().strftime('%Y-%m-%d')}.log"
+    logger.info(f"Log file: {log_file}")
+    
+    # If a specific task is provided, run single agent
+    if args.task:
+        logger.info(f"Running single task: {args.task}")
+        run_agent(agent, args.task)
+    else:
+        # No task specified - run work + monitor in parallel (monitor only for Nova)
+        import multiprocessing
+        
+        work_task = "Check Slack, sync with team, do your work, update your memory file."
+        
+        def run_monitor():
+            """Run monitor.py in a subprocess."""
+            subprocess.run(
+                ["python", "monitor.py"],
+                cwd=str(REPO_ROOT),
+            )
+        
+        # Only Nova gets the monitor process
+        is_nova = agent["name"].lower() == "nova"
+        
+        if is_nova:
+            logger.info("🚀 Starting two parallel processes...")
+            logger.info("   Process 1: Work mode (Claude agent)")
+            logger.info("   Process 2: Monitor mode (Slack watcher)")
+            logger.info("   Press Ctrl+C to stop")
+        else:
+            logger.info("🚀 Starting work process...")
+            logger.info("   Process 1: Work mode (Claude agent)")
+            logger.info("   ℹ️  Monitor mode is only enabled for Nova (PM)")
+            logger.info("   Press Ctrl+C to stop")
+        
+        p1 = multiprocessing.Process(target=run_agent, args=(agent, work_task))
+        
+        processes = [p1]
+        
+        if is_nova:
+            p2 = multiprocessing.Process(target=run_monitor)
+            processes.append(p2)
+        
+        try:
+            logger.debug(f"Starting {len(processes)} process(es)")
+            for p in processes:
+                p.start()
+                logger.debug(f"Process {p.name} started with PID {p.pid}")
+            
+            for p in processes:
+                p.join()
+        except KeyboardInterrupt:
+            logger.info("👋 Stopping processes...")
+            for p in processes:
+                p.terminate()
+            for p in processes:
+                p.join()
+            logger.info("All processes terminated")
+        
+        if is_nova:
+            logger.info("✅ Both processes completed")
+        else:
+            logger.info("✅ Work process completed")
+
+
+if __name__ == "__main__":
+    main()

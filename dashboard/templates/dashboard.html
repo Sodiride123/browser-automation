@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NinjaSquad Agent Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #16161f;
+            --bg-card-hover: #1c1c28;
+            --bg-terminal: #0d0d14;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8888a0;
+            --text-muted: #555570;
+            --border: #2a2a3a;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-cyan: #06b6d4;
+            --accent-pink: #ec4899;
+            --glow-blue: rgba(59, 130, 246, 0.15);
+            --glow-purple: rgba(139, 92, 246, 0.15);
+            --radius: 12px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.4);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(59,130,246,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(139,92,246,0.06) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            padding: 24px 28px;
+            background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-pink));
+        }
+
+        .agent-avatar {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 3px solid var(--agent-color, var(--accent-purple));
+            box-shadow: 0 0 20px var(--agent-glow, var(--glow-purple));
+            object-fit: cover;
+            transition: transform 0.3s;
+        }
+
+        .agent-avatar:hover { transform: scale(1.1); }
+
+        .agent-info { flex: 1; }
+
+        .agent-name {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--agent-color, var(--accent-purple)), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1.2;
+        }
+
+        .agent-role {
+            font-size: 15px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        .agent-meta {
+            display: flex;
+            gap: 16px;
+            margin-top: 8px;
+        }
+
+        .agent-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .agent-badge .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .header-stat {
+            text-align: center;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .header-stat-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+        }
+
+        .header-stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== GRID LAYOUT ===== */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .grid-full { grid-column: 1 / -1; }
+
+        /* ===== CARDS ===== */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            transition: border-color 0.3s;
+        }
+
+        .card:hover { border-color: rgba(139,92,246,0.3); }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255,255,255,0.02);
+        }
+
+        .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title .icon {
+            font-size: 18px;
+        }
+
+        .card-body { padding: 20px; }
+
+        /* ===== STATS ROW ===== */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s, border-color 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(59,130,246,0.3);
+        }
+
+        .stat-icon { font-size: 24px; margin-bottom: 8px; }
+
+        .stat-value {
+            font-size: 26px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== LOG VIEWER ===== */
+        .log-tabs {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .log-tab {
+            padding: 6px 14px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .log-tab:hover { background: rgba(255,255,255,0.05); }
+        .log-tab.active {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        .log-container {
+            background: var(--bg-terminal);
+            border-radius: 8px;
+            padding: 16px;
+            height: 450px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            line-height: 1.7;
+            border: 1px solid var(--border);
+            scroll-behavior: smooth;
+        }
+
+        .log-container::-webkit-scrollbar { width: 6px; }
+        .log-container::-webkit-scrollbar-track { background: transparent; }
+        .log-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .log-line { white-space: pre-wrap; word-break: break-all; }
+        .log-line .ts { color: var(--text-muted); }
+        .log-line .level-info { color: var(--accent-blue); }
+        .log-line .level-warn { color: var(--accent-orange); }
+        .log-line .level-error { color: var(--accent-red); }
+        .log-line .level-debug { color: var(--text-muted); }
+        .log-line .emoji { }
+
+        .log-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .log-btn {
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .log-btn:hover { background: rgba(255,255,255,0.1); }
+        .log-btn.active { background: var(--accent-green); color: white; border-color: var(--accent-green); }
+
+        /* ===== TOOL LIST ===== */
+        .tool-list { max-height: 350px; overflow-y: auto; }
+
+        .tool-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            transition: background 0.2s;
+        }
+
+        .tool-item:hover { background: rgba(255,255,255,0.02); }
+        .tool-item:last-child { border-bottom: none; }
+
+        .tool-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .tool-count {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            background: rgba(6,182,212,0.1);
+            padding: 2px 10px;
+            border-radius: 12px;
+        }
+
+        /* ===== PROMPTS ===== */
+        .prompt-list { max-height: 350px; overflow-y: auto; }
+
+        .prompt-item {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .prompt-item:last-child { border-bottom: none; }
+
+        .prompt-time {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .prompt-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ===== CHART ===== */
+        .chart-container {
+            height: 250px;
+            position: relative;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1024px) {
+            .grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(3, 1fr); }
+            .header { flex-wrap: wrap; }
+        }
+
+        @media (max-width: 640px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .header-stats { display: none; }
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Log filter toggle */
+        .log-filter {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+        }
+        .log-filter input { accent-color: var(--accent-blue); cursor: pointer; }
+
+        /* Modal overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255,255,255,0.02);
+        }
+
+        .modal-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-close {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            width: 32px; height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .modal-close:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-section {
+            margin-bottom: 20px;
+        }
+        .modal-section:last-child { margin-bottom: 0; }
+
+        .modal-section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .modal-section-content {
+            background: var(--bg-terminal);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text-primary);
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .modal-section-content.prompt-content {
+            border-left: 3px solid var(--accent-blue);
+        }
+        .modal-section-content.response-content {
+            border-left: 3px solid var(--accent-green);
+        }
+
+        .modal-time {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* Clickable prompt items */
+        .prompt-item { cursor: pointer; transition: background 0.2s; }
+        .prompt-item:hover { background: rgba(255,255,255,0.04); }
+    </style>
+<script src="https://sites.super.betamyninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header" id="header">
+            <img class="agent-avatar" id="agentAvatar" src="" alt="Agent Avatar">
+            <div class="agent-info">
+                <div class="agent-name" id="agentName">Loading...</div>
+                <div class="agent-role" id="agentRole"></div>
+                <div class="agent-meta">
+                    <span class="agent-badge"><span class="dot"></span> <span id="agentStatus">Online</span></span>
+                    <span class="agent-badge" id="agentChannel"></span>
+                    <span class="agent-badge" id="agentWorkspace"></span>
+                </div>
+            </div>
+            <div class="header-stats">
+                <div class="header-stat">
+                    <div class="header-stat-value" id="totalCost">$0.00</div>
+                    <div class="header-stat-label">Total Cost</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-value" id="totalMessages">0</div>
+                    <div class="header-stat-label">Messages</div>
+                </div>
+                <div class="header-stat">
+                    <div class="header-stat-value" id="totalTools">0</div>
+                    <div class="header-stat-label">Tool Uses</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row" id="statsRow">
+            <div class="stat-card">
+                <div class="stat-icon">📥</div>
+                <div class="stat-value" id="inputTokens" style="color: var(--accent-blue)">0</div>
+                <div class="stat-label">Input Tokens</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📤</div>
+                <div class="stat-value" id="outputTokens" style="color: var(--accent-purple)">0</div>
+                <div class="stat-label">Output Tokens</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">💾</div>
+                <div class="stat-value" id="cacheWriteTokens" style="color: var(--accent-orange)">0</div>
+                <div class="stat-label">Cache Write</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-value" id="cacheReadTokens" style="color: var(--accent-green)">0</div>
+                <div class="stat-label">Cache Read</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🔧</div>
+                <div class="stat-value" id="totalToolUses" style="color: var(--accent-cyan)">0</div>
+                <div class="stat-label">Tool Uses</div>
+            </div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="grid">
+            <!-- Log Viewer -->
+            <div class="card grid-full">
+                <div class="card-header">
+                    <div class="card-title"><span class="icon">📋</span> Live Logs</div>
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        <div class="log-tabs" id="logTabs"></div>
+                        <div class="log-controls">
+                            <label class="log-filter">
+                                <input type="checkbox" id="hideDebugCheck" checked onchange="reloadCurrentLog()"> Hide heartbeats
+                            </label>
+                            <button class="log-btn active" id="autoScrollBtn" onclick="toggleAutoScroll()">⬇ Auto-scroll</button>
+                            <button class="log-btn" onclick="clearLogs()">🗑 Clear</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body" style="padding:12px;">
+                    <div class="log-container" id="logContainer">
+                        <div class="empty-state">Loading logs...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tool Usage -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="icon">🔧</span> Tool Usage</div>
+                    <span style="font-size:12px; color:var(--text-muted)" id="toolTotal">0 total</span>
+                </div>
+                <div class="card-body" style="padding:0;">
+                    <div class="tool-list" id="toolList">
+                        <div class="empty-state">Loading tools...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Prompts -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="icon">💬</span> Recent Prompts</div>
+                </div>
+                <div class="card-body" style="padding:0;">
+                    <div class="prompt-list" id="promptList">
+                        <div class="empty-state">Loading prompts...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prompt Modal -->
+        <div class="modal-overlay" id="promptModal" onclick="closeModal(event)">
+            <div class="modal" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h3>💬 Prompt & Response</h3>
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-time" id="modalTime"></div>
+                    <div class="modal-section">
+                        <div class="modal-section-label">📤 User Prompt</div>
+                        <div class="modal-section-content prompt-content" id="modalPrompt"></div>
+                    </div>
+                    <div class="modal-section">
+                        <div class="modal-section-label">🤖 Assistant Response</div>
+                        <div class="modal-section-content response-content" id="modalResponse"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Token Usage Chart -->
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header">
+                <div class="card-title"><span class="icon">📊</span> Token Usage Timeline</div>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="tokenChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let autoScroll = true;
+        let currentLogFile = null;
+        let eventSource = null;
+        let tokenChart = null;
+
+        // ===== AGENT INFO =====
+        async function loadAgent() {
+            try {
+                const res = await fetch('/api/agent');
+                const agent = await res.json();
+                
+                document.getElementById('agentAvatar').src = agent.icon_url;
+                document.getElementById('agentAvatar').style.setProperty('--agent-color', agent.color);
+                document.getElementById('agentAvatar').style.borderColor = agent.color;
+                document.getElementById('agentAvatar').style.boxShadow = `0 0 20px ${agent.color}33`;
+                document.getElementById('agentName').textContent = `${agent.emoji} ${agent.name}`;
+                document.getElementById('agentName').style.background = `linear-gradient(135deg, ${agent.color}, var(--accent-blue))`;
+                document.getElementById('agentName').style.webkitBackgroundClip = 'text';
+                document.getElementById('agentName').style.webkitTextFillColor = 'transparent';
+                document.getElementById('agentRole').textContent = agent.role;
+                document.getElementById('agentChannel').textContent = `📢 ${agent.channel || 'No channel'}`;
+                document.getElementById('agentWorkspace').textContent = `🏢 ${agent.workspace || 'Unknown'}`;
+                
+                document.title = `${agent.emoji} ${agent.name} — NinjaSquad Dashboard`;
+            } catch (e) {
+                console.error('Failed to load agent:', e);
+            }
+        }
+
+        // ===== CLAUDE MONITOR STATS =====
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/claude-monitor/stats');
+                const data = await res.json();
+                const s = data.stats || {};
+
+                document.getElementById('totalCost').textContent = `$${(s.total_cost || 0).toFixed(2)}`;
+                document.getElementById('totalMessages').textContent = formatNumber(s.total_messages || 0);
+                document.getElementById('totalTools').textContent = formatNumber(s.total_tool_uses || 0);
+                document.getElementById('inputTokens').textContent = formatTokens(s.total_input_tokens || 0);
+                document.getElementById('outputTokens').textContent = formatTokens(s.total_output_tokens || 0);
+                document.getElementById('cacheWriteTokens').textContent = formatTokens(s.total_cache_write_tokens || 0);
+                document.getElementById('cacheReadTokens').textContent = formatTokens(s.total_cache_read_tokens || 0);
+                document.getElementById('totalToolUses').textContent = formatNumber(s.total_tool_uses || 0);
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+        }
+
+        // ===== LOG FILES =====
+        async function loadLogFiles() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                const tabs = document.getElementById('logTabs');
+                tabs.innerHTML = '';
+
+                data.files.forEach((f, i) => {
+                    const tab = document.createElement('button');
+                    tab.className = 'log-tab' + (i === 0 ? ' active' : '');
+                    tab.textContent = f.name.replace('.log', '');
+                    tab.onclick = () => selectLog(f.name, tab);
+                    tabs.appendChild(tab);
+                });
+
+                if (data.files.length > 0) {
+                    selectLog(data.files[0].name, tabs.firstChild);
+                }
+            } catch (e) {
+                console.error('Failed to load log files:', e);
+            }
+        }
+
+        let logPollTimer = null;
+        let lastLogLength = 0;
+
+        async function selectLog(filename, tabEl) {
+            // Update tabs
+            document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+            if (tabEl) tabEl.classList.add('active');
+            currentLogFile = filename;
+            lastLogLength = 0;
+
+            // Close existing SSE and polling
+            if (eventSource) { eventSource.close(); eventSource = null; }
+            if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; }
+
+            // Load initial content
+            await fetchLogContent(filename);
+
+            // Try SSE first, fall back to polling
+            try {
+                eventSource = new EventSource(`/api/logs/${logApiPath(filename)}/stream`);
+                let sseTimeout = setTimeout(() => {
+                    // If no message received in 5s, SSE is probably blocked by proxy
+                    if (eventSource) {
+                        console.log('SSE timeout, falling back to polling');
+                        eventSource.close();
+                        eventSource = null;
+                        startLogPolling(filename);
+                    }
+                }, 5000);
+
+                eventSource.onmessage = (e) => {
+                    clearTimeout(sseTimeout);
+                    const data = JSON.parse(e.data);
+                    if (data.line && data.line.trim()) {
+                        appendLogLine(data.line);
+                        if (autoScroll) {
+                            document.getElementById('logContainer').scrollTop =
+                                document.getElementById('logContainer').scrollHeight;
+                        }
+                    }
+                };
+                eventSource.onerror = () => {
+                    clearTimeout(sseTimeout);
+                    console.log('SSE error, falling back to polling');
+                    if (eventSource) { eventSource.close(); eventSource = null; }
+                    startLogPolling(filename);
+                };
+            } catch (e) {
+                console.log('SSE not available, using polling');
+                startLogPolling(filename);
+            }
+        }
+
+        function logApiPath(filename) {
+            // Strip .log extension to avoid proxy 403 blocking
+            return filename.replace(/\.log$/, '');
+        }
+
+        async function fetchLogContent(filename) {
+            try {
+                const res = await fetch(`/api/logs/${logApiPath(filename)}?lines=500`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const container = document.getElementById('logContainer');
+                container.innerHTML = '';
+
+                const lines = data.content.split('\n');
+                lines.forEach(line => {
+                    if (line.trim()) appendLogLine(line);
+                });
+
+                lastLogLength = data.content.length;
+                if (autoScroll) container.scrollTop = container.scrollHeight;
+            } catch (e) {
+                console.error('Failed to load log:', e);
+                document.getElementById('logContainer').innerHTML =
+                    '<div class="empty-state">Failed to load logs. Retrying...</div>';
+            }
+        }
+
+        function startLogPolling(filename) {
+            if (logPollTimer) clearInterval(logPollTimer);
+            logPollTimer = setInterval(async () => {
+                if (currentLogFile !== filename) return;
+                try {
+                    const res = await fetch(`/api/logs/${logApiPath(filename)}?lines=500`);
+                    const data = await res.json();
+                    if (data.content.length !== lastLogLength) {
+                        const container = document.getElementById('logContainer');
+                        container.innerHTML = '';
+                        data.content.split('\n').forEach(line => {
+                            if (line.trim()) appendLogLine(line);
+                        });
+                        lastLogLength = data.content.length;
+                        if (autoScroll) container.scrollTop = container.scrollHeight;
+                    }
+                } catch (e) {
+                    console.error('Poll error:', e);
+                }
+            }, 5000);
+        }
+
+        function shouldShowLine(text) {
+            if (!document.getElementById('hideDebugCheck').checked) return true;
+            // Filter out heartbeat debug lines
+            if (/\bDEBUG\b/.test(text) && /Heartbeat updated/.test(text)) return false;
+            return true;
+        }
+
+        function appendLogLine(text) {
+            if (!shouldShowLine(text)) return;
+            const container = document.getElementById('logContainer');
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.innerHTML = colorizeLog(text);
+            container.appendChild(div);
+
+            // Keep max 2000 lines
+            while (container.children.length > 2000) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
+        function reloadCurrentLog() {
+            if (currentLogFile) {
+                const activeTab = document.querySelector('.log-tab.active');
+                selectLog(currentLogFile, activeTab);
+            }
+        }
+
+        function colorizeLog(text) {
+            // Timestamp
+            text = text.replace(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/, '<span class="ts">$1</span>');
+            // Levels
+            text = text.replace(/\b(INFO)\b/g, '<span class="level-info">$1</span>');
+            text = text.replace(/\b(WARNING|WARN)\b/g, '<span class="level-warn">$1</span>');
+            text = text.replace(/\b(ERROR|CRITICAL)\b/g, '<span class="level-error">$1</span>');
+            text = text.replace(/\b(DEBUG)\b/g, '<span class="level-debug">$1</span>');
+            // Emojis stay as-is
+            return text;
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('autoScrollBtn');
+            btn.classList.toggle('active', autoScroll);
+            if (autoScroll) {
+                document.getElementById('logContainer').scrollTop = 
+                    document.getElementById('logContainer').scrollHeight;
+            }
+        }
+
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '';
+        }
+
+        // ===== TOOLS =====
+        async function loadTools() {
+            try {
+                const res = await fetch('/api/claude-monitor/tools/summary');
+                const data = await res.json();
+                const list = document.getElementById('toolList');
+                const summary = data.summary || [];
+                
+                document.getElementById('toolTotal').textContent = `${data.total || 0} total`;
+
+                if (summary.length === 0) {
+                    list.innerHTML = '<div class="empty-state">No tool usage yet</div>';
+                    return;
+                }
+
+                list.innerHTML = summary.map(t => `
+                    <div class="tool-item">
+                        <span class="tool-name">${escapeHtml(t.name)}</span>
+                        <span class="tool-count">${t.count}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load tools:', e);
+            }
+        }
+
+        // ===== PROMPTS =====
+        let promptsData = [];
+
+        async function loadPrompts() {
+            try {
+                const res = await fetch('/api/claude-monitor/prompts');
+                const data = await res.json();
+                const list = document.getElementById('promptList');
+                promptsData = (data.prompts || []).slice(0, 20);
+
+                if (promptsData.length === 0) {
+                    list.innerHTML = '<div class="empty-state">No prompts yet</div>';
+                    return;
+                }
+
+                list.innerHTML = promptsData.map((p, i) => `
+                    <div class="prompt-item" onclick="openPromptModal(${i})">
+                        <div class="prompt-time">${formatTime(p.timestamp)}</div>
+                        <div class="prompt-text">${escapeHtml(p.content).substring(0, 200)}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load prompts:', e);
+            }
+        }
+
+        // ===== PROMPT MODAL =====
+        function openPromptModal(index) {
+            const p = promptsData[index];
+            if (!p) return;
+
+            document.getElementById('modalTime').textContent = formatTime(p.timestamp);
+            document.getElementById('modalPrompt').textContent = p.content || 'No prompt content';
+            document.getElementById('modalResponse').textContent = p.response || 'No response captured';
+            document.getElementById('promptModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('promptModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // ===== CHART =====
+        async function loadChart() {
+            try {
+                const res = await fetch('/api/claude-monitor/timeline');
+                const data = await res.json();
+                const timeline = data.timeline || [];
+
+                if (timeline.length === 0) return;
+
+                const ctx = document.getElementById('tokenChart').getContext('2d');
+                
+                if (tokenChart) tokenChart.destroy();
+
+                tokenChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: timeline.map(t => formatTime(t.timestamp)),
+                        datasets: [
+                            {
+                                label: 'Input',
+                                data: timeline.map(t => t.input_tokens),
+                                backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                                borderRadius: 4,
+                            },
+                            {
+                                label: 'Output',
+                                data: timeline.map(t => t.output_tokens),
+                                backgroundColor: 'rgba(139, 92, 246, 0.6)',
+                                borderRadius: 4,
+                            },
+                            {
+                                label: 'Cache Read',
+                                data: timeline.map(t => t.cache_read_tokens),
+                                backgroundColor: 'rgba(16, 185, 129, 0.6)',
+                                borderRadius: 4,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#8888a0', font: { family: 'Inter' } }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#555570', maxTicksLimit: 15, font: { size: 10 } },
+                                grid: { color: 'rgba(255,255,255,0.03)' }
+                            },
+                            y: {
+                                ticks: { color: '#555570', callback: v => formatTokens(v) },
+                                grid: { color: 'rgba(255,255,255,0.03)' }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Failed to load chart:', e);
+            }
+        }
+
+        // ===== HELPERS =====
+        function formatNumber(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        function formatTokens(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        function formatTime(ts) {
+            try {
+                const d = new Date(ts);
+                return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            } catch { return ts; }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ===== INIT =====
+        async function init() {
+            await loadAgent();
+            await loadStats();
+            await loadLogFiles();
+            await loadTools();
+            await loadPrompts();
+            await loadChart();
+
+            // Refresh stats every 10s
+            setInterval(loadStats, 10000);
+            // Refresh tools/prompts every 30s
+            setInterval(loadTools, 30000);
+            setInterval(loadPrompts, 30000);
+        }
+
+        init();
+    </script>
+</body>
+</html>
