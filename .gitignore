@@ -70,3 +70,21 @@ logs/
 config/settings_arash.json
 settings_arash.json
 settings.json
+
+# Browser persistent data (cookies, cache, profiles)
+phantom/browser_data/Default/
+phantom/browser_data/GrShaderCache/
+phantom/browser_data/GraphiteDawnCache/
+phantom/browser_data/ShaderCache/
+phantom/browser_data/component_crx_cache/
+phantom/browser_data/extensions_crx_cache/
+phantom/browser_data/segmentation_platform/
+phantom/browser_data/Last Version
+phantom/browser_data/Local State
+phantom/browser_data/Variations
+phantom/browser_data/*.pma
+phantom/browser_data/*.db
+phantom/browser_data/*.db-journal
+
+# Ad-hoc task scripts
+phantom_task.py

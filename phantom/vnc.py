@@ -11,11 +11,12 @@ from pathlib import Path
 from typing import Optional
 
 
-def get_vnc_url(with_password: bool = True) -> str:
+def get_vnc_url() -> str:
     """
     Get the public noVNC URL for sharing the live browser view.
 
-    Returns the auto-connect URL with password if available.
+    Returns the auto-connect URL with password so the user can
+    click and immediately see the browser — no password prompt.
     """
     try:
         with open("/dev/shm/sandbox_metadata.json") as f:
@@ -24,45 +25,32 @@ def get_vnc_url(with_password: bool = True) -> str:
         stage = meta["environment"]
         base = f"https://6080-{sandbox_id}.app.super.{stage}myninja.ai"
 
-        # Try to get noVNC password
-        if with_password:
-            password = _get_vnc_password()
-            if password:
-                return f"{base}/vnc.html?autoconnect=true&password={password}"
+        password = _get_vnc_password()
+        if password:
+            return f"{base}/vnc.html?autoconnect=true&password={password}"
 
-        return base
+        return f"{base}/vnc.html?autoconnect=true"
     except (FileNotFoundError, KeyError, json.JSONDecodeError):
         return "http://0.0.0.0:6080"
 
 
 def _get_vnc_password() -> Optional[str]:
-    """Try to read the noVNC password from common locations."""
-    password_files = [
-        Path("/dev/shm/vnc_password"),
-        Path("/tmp/vnc_password"),
-        Path.home() / ".vnc" / "passwd",
-    ]
-    for pf in password_files:
+    """Read the VNC password from known locations."""
+    # Primary: plaintext password file written by supervisord
+    password_txt = Path("/root/.vnc/password.txt")
+    if password_txt.exists():
+        try:
+            return password_txt.read_text().strip()
+        except Exception:
+            pass
+
+    # Fallback locations
+    for pf in [Path("/dev/shm/vnc_password"), Path("/tmp/vnc_password")]:
         if pf.exists():
             try:
                 return pf.read_text().strip()
             except Exception:
                 continue
-
-    # Try to extract from running noVNC process args
-    try:
-        result = subprocess.run(
-            ["ps", "aux"], capture_output=True, text=True
-        )
-        for line in result.stdout.split("\n"):
-            if "novnc" in line.lower() and "password" in line:
-                # Extract password from command args
-                import re
-                match = re.search(r'password[=\s]+(\S+)', line)
-                if match:
-                    return match.group(1)
-    except Exception:
-        pass
 
     return None
 

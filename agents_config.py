@@ -35,6 +35,13 @@ AGENTS = {
         "spec": "SCOUT_SPEC.md",
         "mentions": ["scout", "Scout", "@scout"],
     },
+    "phantom": {
+        "name": "Phantom",
+        "role": "Browser Automation Agent",
+        "emoji": "👻",
+        "spec": "PHANTOM_SPEC.md",
+        "mentions": ["phantom", "Phantom", "@phantom"],
+    },
 }
 
 

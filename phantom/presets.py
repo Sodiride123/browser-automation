@@ -5,9 +5,9 @@ Presets are pre-configured task templates that reduce the need for
 verbose natural language instructions for common operations.
 
 Usage (CLI):
-    python phantom/run.py --preset screenshot --url https://example.com
-    python phantom/run.py --preset extract --url https://example.com
-    python phantom/run.py --preset search --query "AI news 2026"
+    python -m phantom "screenshot https://example.com"
+    python -m phantom "extract text from https://example.com"
+    python -m phantom "search for AI news 2026"
 
 Usage (Python):
     from phantom.presets import get_preset_task

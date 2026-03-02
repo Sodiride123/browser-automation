@@ -1,3 +1,39 @@
-"""Allow running as: python -m phantom 'task description'"""
-from phantom.run import main
-main()
+"""
+Phantom — Browser Automation Agent
+
+Entry point: runs Phantom through the orchestrator (Claude Code via claude-wrapper.sh).
+
+Usage:
+    python -m phantom                          # Default: check Slack, do work
+    python -m phantom "Go to google.com..."    # Run a specific task
+"""
+import sys
+import os
+
+# Ensure project root is on path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from orchestrator import run_agent, ensure_settings_file, login_github_cli, setup_logging
+from agents_config import AGENTS
+
+
+def main():
+    logger = setup_logging("phantom")
+
+    # Ensure settings are ready
+    if not ensure_settings_file(logger):
+        logger.error("❌ Cannot start without settings.json. Exiting.")
+        sys.exit(1)
+
+    login_github_cli(logger)
+
+    agent = AGENTS["phantom"]
+
+    # If a task was passed as argument, use it
+    task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
+
+    run_agent(agent, task)
+
+
+if __name__ == "__main__":
+    main()
