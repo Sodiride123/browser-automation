@@ -52,6 +52,8 @@ PRICING = {
 
 # Agent definitions
 AGENTS = {
+    "phantom": {"name": "Phantom", "role": "Browser Automation Agent", "emoji": "\U0001f47b", "color": "#8b5cf6",
+                "icon_url": f"{AVATAR_BASE_URL}/phantom.png"},
     "nova": {"name": "Nova", "role": "Product Manager", "emoji": "\U0001f31f", "color": "#a855f7",
              "icon_url": f"{AVATAR_BASE_URL}/nova.png"},
     "pixel": {"name": "Pixel", "role": "UX Designer", "emoji": "\U0001f3a8", "color": "#ec4899",
