@@ -1,0 +1,17 @@
+{
+  "custom.example.org": {
+    "domain": "custom.example.org",
+    "primary_strategy": "testid",
+    "secondary_strategy": "text",
+    "testid_pct": 0.6,
+    "aria_pct": 0.3,
+    "stable_id_pct": 0.2,
+    "name_pct": 0.1,
+    "text_unique_pct": 0.3,
+    "class_hash_ratio": 0.0,
+    "total_elements": 10,
+    "recommendations": [
+      "prefer data-testid selectors"
+    ]
+  }
+}

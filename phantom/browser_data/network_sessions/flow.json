@@ -1,0 +1,14 @@
+{
+  "name": "flow",
+  "pairs": [
+    {
+      "url": "https://api.example.com/data",
+      "method": "GET",
+      "request_headers": {},
+      "post_data": "",
+      "status": 200,
+      "response_headers": {},
+      "body": "{\"ok\":true}"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "session_a",
+  "pairs": [
+    {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "request_headers": {},
+      "post_data": "",
+      "status": 200,
+      "response_headers": {},
+      "body": "{\"users\":[]}"
+    },
+    {
+      "url": "https://api.example.com/posts",
+      "method": "GET",
+      "request_headers": {},
+      "post_data": "",
+      "status": 200,
+      "response_headers": {},
+      "body": "{\"posts\":[]}"
+    }
+  ]
+}
