@@ -1,19 +1,15 @@
 """
-Agent Team Orchestrator
+Phantom Orchestrator — Browser Automation Agent
 
-Simple orchestrator that runs Claude Code for the configured agent.
+Runs Claude Code as the Phantom browser automation agent.
 Agent identity is read from ~/.agent_settings.json config file.
-Agent behavior is defined by their markdown spec files in agent-docs/.
+Agent behavior is defined by agent-docs/PHANTOM_SPEC.md.
 
 Usage:
-    python orchestrator.py                    # Run work + monitor in parallel
+    python orchestrator.py                    # Run default work loop
     python orchestrator.py --task "Do X"      # Run single task
-    python orchestrator.py --list             # List all agents
+    python orchestrator.py --list             # List available agents
     python orchestrator.py --test             # Run capability tests
-
-When run without --task, starts two parallel processes:
-  1. Work mode: Claude agent does work (check Slack, sync, update memory)
-  2. Monitor mode: Watches for Slack mentions and responds (45s + 5s jitter)
 """
 
 import subprocess
@@ -466,27 +462,22 @@ def read_file(path: Path) -> str:
     return path.read_text() if path.exists() else ""
 
 
-def build_prompt(agent: dict, task: str = "", use_references: bool = True) -> str:
-    """Build the prompt for an agent from their spec and memory.
+def build_prompt(agent: dict, task: str = "") -> str:
+    """Build the prompt for the Phantom browser automation agent.
     
     Args:
         agent: Agent configuration dict
         task: Optional specific task
-        use_references: If True, use file references instead of embedding content (saves ~100KB)
     """
     
     # Get default channel from config
     config = load_config()
     channel = config.get("default_channel_name", config.get("default_channel", "#your-channel"))
-    default_task = f"Check Slack {channel}, sync with team, do your work, update your memory file."
+    default_task = f"Check Slack {channel} for new requests, do your work, update your memory file."
     
-    if use_references:
-        # OPTIMIZED: Use file references instead of embedding content
-        # This reduces prompt size from ~100KB to ~3KB
-        memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
-        prd = read_file(REPO_ROOT / "agent-docs" / "PRD.md")
-        
-        return f"""# You are {agent['name']} {agent['emoji']}
+    memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
+    
+    return f"""# You are {agent['name']} {agent['emoji']}
 
 ## Your Identity
 - **Name:** {agent['name']}
@@ -500,16 +491,7 @@ def build_prompt(agent: dict, task: str = "", use_references: bool = True) -> st
 Before starting work, read these files for full context:
 
 1. **Your Specification:** `cat agent-docs/{agent['spec']}`
-2. **Architecture:** `cat agent-docs/ARCHITECTURE.md`
-3. **Communication Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
-4. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
-5. **Onboarding Guide:** `cat agent-docs/ONBOARDING.md`
-
----
-
-## Current PRD
-
-{prd if prd else "No PRD yet. The PM agent needs to interview stakeholders to create it. See agent-docs/PRD.md"}
+2. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
 
 ---
 
@@ -524,22 +506,23 @@ Before starting work, read these files for full context:
 **Slack Commands:**
 - `python slack_interface.py read -l 50` - Read recent messages
 - `python slack_interface.py say "message"` - Post updates
+- `python slack_interface.py upload <file> --title "..."` - Upload file/screenshot
 - `python slack_interface.py config` - Check configuration
 
-**GitHub Commands:**
-- `gh issue list` - List issues
-- `gh issue create --title "..." --body "..."` - Create issue
+**Browser (Persistent — tabs survive between tasks):**
+- `python phantom/browser_server.py status` - Check browser status
+- `python phantom/browser_server.py start` - Start browser if not running
+- Connect in Python: `BrowserInterface.connect_cdp()` (see your spec for full API)
 
-**Tavily Web Research** (reads credentials from settings.json automatically):
+**Tavily Web Research** (text-based, no browser needed):
 - `from tavily_client import Tavily; t = Tavily()` - Initialize
 - `t.search("query")`, `t.extract(["url"])`, `t.crawl("url")`, `t.research("topic")`
-- 5 tools: search (~1s), extract (~3s), crawl (~10s), map (~3s), research (~30-60s)
 
 ---
 
 ## Headless Mode
 
-You are running in **headless CLI mode** - there is no human at the terminal.
+You are running in **headless CLI mode** — there is no human at the terminal.
 
 **Communicate via Slack only** using `python slack_interface.py`.
 
@@ -547,106 +530,14 @@ You are running in **headless CLI mode** - there is no human at the terminal.
 
 - **Keep messages SHORT** — 2-4 sentences max. No walls of text. Be direct.
 - **Reply in threads** — If someone asks you a question or requests an update, reply in the thread (`-t thread_ts`), not as a new message.
-- **Sprint updates** — Post status updates as a top-level message titled "Sprint N Update" (e.g. "Sprint 1 Update"). All agents reply to that same thread with their individual updates.
-- **No duplicate updates** — Don't create new top-level messages for updates. Find the existing Sprint thread and reply there.
 
 **Workflow:**
 1. Read your spec file first: `cat agent-docs/{agent['spec']}`
-2. Read Slack for context
-3. Check your assigned GitHub issues: `gh issue list --assignee @me`
-4. Do your work (focus on assigned issues)
-5. Comment on GitHub issues with progress: `gh issue comment <number> --body "..."`
-6. Post updates to Slack (short, in threads)
-7. Commit changes to git
-8. Update your memory file (`memory/{agent['name'].lower()}_memory.md`)
-
----
-
-## Current Task
-
-{task if task else default_task}
-"""
-    else:
-        # LEGACY: Embed full content (large prompt ~100KB)
-        spec = read_file(REPO_ROOT / "agent-docs" / agent["spec"])
-        memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
-        prd = read_file(REPO_ROOT / "agent-docs" / "PRD.md")
-        protocol = read_file(REPO_ROOT / "agent-docs" / "AGENT_PROTOCOL.md")
-        slack_docs = read_file(REPO_ROOT / "agent-docs" / "SLACK_INTERFACE.md")
-        architecture = read_file(REPO_ROOT / "agent-docs" / "ARCHITECTURE.md")
-        
-        return f"""# You are {agent['name']} {agent['emoji']}
-
-## Your Identity
-- **Name:** {agent['name']}
-- **Role:** {agent['role']}
-- **Emoji:** {agent['emoji']}
-
----
-
-## Your Specification
-
-{spec}
-
----
-
-## Architecture
-
-{architecture}
-
----
-
-## Communication Protocol
-
-{protocol}
-
----
-
-## Slack Interface Documentation
-
-{slack_docs}
-
----
-
-## Current PRD
-
-{prd if prd else "No PRD yet. The PM agent needs to interview stakeholders to create it."}
-
----
-
-## Your Memory
-
-{memory if memory else "No previous memory. This is your first session."}
-
----
-
-## Headless Mode
-
-You are running in **headless CLI mode** - there is no human at the terminal.
-
-**Communicate via Slack only** using `python slack_interface.py`:
-- `python slack_interface.py read -l 50` - Read recent messages
-- `python slack_interface.py say "message"` - Post updates
-
-**Tavily Web Research** (reads credentials from settings.json automatically):
-- `from tavily_client import Tavily; t = Tavily()` - Initialize
-- `t.search("query")`, `t.extract(["url"])`, `t.crawl("url")`, `t.research("topic")`
-
-## ⚡ Slack Communication Protocol
-
-- **Keep messages SHORT** — 2-4 sentences max. No walls of text. Be direct.
-- **Reply in threads** — If someone asks you a question or requests an update, reply in the thread (`-t thread_ts`), not as a new message.
-- **Sprint updates** — Post status updates as a top-level message titled "Sprint N Update" (e.g. "Sprint 1 Update"). All agents reply to that same thread with their individual updates.
-- **No duplicate updates** — Don't create new top-level messages for updates. Find the existing Sprint thread and reply there.
-
-**Workflow:**
-1. Read Slack for context
-2. Check your assigned GitHub issues: `gh issue list --assignee @me`
-3. Do your work (focus on assigned issues)
-4. Comment on GitHub issues with progress: `gh issue comment <number> --body "..."`
-5. Post updates to Slack (short, in threads)
-6. Commit changes to git
-7. Update your memory file (`memory/{agent['name'].lower()}_memory.md`)
+2. Read Slack for new requests or context
+3. Do your work (browser tasks, research, screenshots, data extraction)
+4. Post results to Slack (short messages, attach screenshots/files)
+5. Commit any code changes to git
+6. Update your memory file (`memory/{agent['name'].lower()}_memory.md`)
 
 ---
 
@@ -726,31 +617,21 @@ def run_capability_tests() -> bool:
     else:
         test_logger.warning("   ⚠️  No default channel configured")
     
-    # Test 2: GitHub CLI
-    test_logger.info("\n📋 Test 2: GitHub CLI")
-    if shutil.which("gh"):
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "status"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                test_logger.info("   ✅ GitHub CLI authenticated")
-                results["github"] = True
-            else:
-                test_logger.error("   ❌ GitHub CLI not authenticated")
-                results["github"] = False
-                all_passed = False
-        except Exception as e:
-            test_logger.error(f"   ❌ GitHub test error: {e}")
-            results["github"] = False
+    # Test 2: Browser Server
+    test_logger.info("\n📋 Test 2: Browser Server")
+    try:
+        import urllib.request
+        resp = urllib.request.urlopen("http://localhost:9222/json/version", timeout=3)
+        if resp.status == 200:
+            test_logger.info("   ✅ Browser server running on port 9222")
+            results["browser"] = True
+        else:
+            test_logger.error("   ❌ Browser server not responding")
+            results["browser"] = False
             all_passed = False
-    else:
-        test_logger.error("   ❌ GitHub CLI (gh) not installed")
-        results["github"] = False
-        all_passed = False
+    except Exception:
+        test_logger.warning("   ⚠️  Browser server not running (start with: python phantom/browser_server.py start)")
+        results["browser"] = False
     
     # Test 3: Claude CLI (MANDATORY)
     test_logger.info("\n📋 Test 3: Claude CLI (REQUIRED)")
@@ -767,8 +648,11 @@ def run_capability_tests() -> bool:
     test_logger.info("\n📋 Test 4: Project Files")
     required_files = [
         "slack_interface.py",
-        "agent-docs/ONBOARDING.md",
-        "agent-docs/AGENT_PROTOCOL.md",
+        "browser_interface.py",
+        "phantom/browser_server.py",
+        "phantom/observer.py",
+        "phantom/actions.py",
+        "agent-docs/PHANTOM_SPEC.md",
         "agent-docs/SLACK_INTERFACE.md",
         "memory",
     ]
@@ -809,18 +693,17 @@ def run_capability_tests() -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Agent Team Orchestrator',
+        description='Phantom Orchestrator — Browser Automation Agent',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python orchestrator.py                    Run configured agent
+  python orchestrator.py                    Run default work loop
   python orchestrator.py --task "Do X"      Run with specific task
-  python orchestrator.py --list             List all agents
   python orchestrator.py --test             Run capability tests
 
 Configuration:
   Agent identity is read from ~/.agent_settings.json
-  Set with: python slack_interface.py config --set-agent nova
+  Set with: python slack_interface.py config --set-agent phantom
         """
     )
     parser.add_argument("--task", "-t", default="", help="Specific task for the agent")
@@ -912,65 +795,16 @@ Configuration:
     log_file = LOG_DIR / f"{agent['name'].lower()}_{datetime.now().strftime('%Y-%m-%d')}.log"
     logger.info(f"Log file: {log_file}")
     
-    # If a specific task is provided, run single agent
+    # Run the agent
     if args.task:
         logger.info(f"Running single task: {args.task}")
         run_agent(agent, args.task)
     else:
-        # No task specified - run work + monitor in parallel (monitor only for Nova)
-        import multiprocessing
-        
-        work_task = "Check Slack, sync with team, do your work, update your memory file."
-        
-        def run_monitor():
-            """Run monitor.py in a subprocess."""
-            subprocess.run(
-                ["python", "monitor.py"],
-                cwd=str(REPO_ROOT),
-            )
-        
-        # Only Nova gets the monitor process
-        is_nova = agent["name"].lower() == "nova"
-        
-        if is_nova:
-            logger.info("🚀 Starting two parallel processes...")
-            logger.info("   Process 1: Work mode (Claude agent)")
-            logger.info("   Process 2: Monitor mode (Slack watcher)")
-            logger.info("   Press Ctrl+C to stop")
-        else:
-            logger.info("🚀 Starting work process...")
-            logger.info("   Process 1: Work mode (Claude agent)")
-            logger.info("   ℹ️  Monitor mode is only enabled for Nova (PM)")
-            logger.info("   Press Ctrl+C to stop")
-        
-        p1 = multiprocessing.Process(target=run_agent, args=(agent, work_task))
-        
-        processes = [p1]
-        
-        if is_nova:
-            p2 = multiprocessing.Process(target=run_monitor)
-            processes.append(p2)
-        
-        try:
-            logger.debug(f"Starting {len(processes)} process(es)")
-            for p in processes:
-                p.start()
-                logger.debug(f"Process {p.name} started with PID {p.pid}")
-            
-            for p in processes:
-                p.join()
-        except KeyboardInterrupt:
-            logger.info("👋 Stopping processes...")
-            for p in processes:
-                p.terminate()
-            for p in processes:
-                p.join()
-            logger.info("All processes terminated")
-        
-        if is_nova:
-            logger.info("✅ Both processes completed")
-        else:
-            logger.info("✅ Work process completed")
+        work_task = "Check Slack for new requests, do your work, update your memory file."
+        logger.info("🚀 Starting work process...")
+        logger.info("   Press Ctrl+C to stop")
+        run_agent(agent, work_task)
+        logger.info("✅ Work process completed")
 
 
 if __name__ == "__main__":
