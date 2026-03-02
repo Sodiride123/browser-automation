@@ -119,6 +119,23 @@ I've received the browser automation task. Here's my plan:
 Starting now!"
 ```
 
+#### Share Live Browser View
+```bash
+# Always share the VNC link so stakeholders can watch the browser live.
+# Use phantom/vnc.py to generate the auto-connect URL with password.
+python slack_interface.py say "**🖥️ Live Browser View**
+
+Watch the browser automation in real-time:
+$(python -c 'from phantom.vnc import get_vnc_url; print(get_vnc_url())')
+
+Click the link above to view the browser session live — no install needed."
+```
+
+> **NOTE:** Always post the VNC link at the start of a task so stakeholders
+> can observe the browser in real-time. This is especially important for
+> long-running tasks, debugging, or when the agent encounters CAPTCHAs
+> or other issues requiring human intervention.
+
 #### Task Completion
 ```bash
 python slack_interface.py say "**Task Complete**
