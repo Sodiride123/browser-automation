@@ -198,6 +198,8 @@ class PhantomAgent:
             viewport_height=self.config.viewport_height,
             timeout=self.config.timeout,
             slow_mo=self.config.slow_mo,
+            user_data_dir=self.config.user_data_dir,
+            proxy=self.config.proxy,
         )
         b.start()
         return b

@@ -154,10 +154,16 @@ class BrowserInterface:
     Use as context manager or call start()/stop().
     Console logs, JS errors, and network failures are captured automatically
     and available via the .devtools property.
+
+    Persistence:
+        Pass user_data_dir to persist cookies, cache, localStorage, and login
+        sessions across runs. Uses Playwright's launch_persistent_context().
+        Without user_data_dir, each session starts with a fresh ephemeral browser.
     """
 
     def __init__(self, headless=False, viewport_width=1280, viewport_height=720,
-                 timeout=30000, slow_mo=0, user_agent=None, capture_console=True):
+                 timeout=30000, slow_mo=0, user_agent=None, capture_console=True,
+                 user_data_dir=None, proxy=None):
         """
         Args:
             headless: False = visible on VNC (default). True = no display.
@@ -166,6 +172,10 @@ class BrowserInterface:
             slow_mo: Delay between actions in ms, useful for VNC demos (default 0).
             user_agent: Custom User-Agent string (optional).
             capture_console: Auto-capture console logs, errors, and network failures (default True).
+            user_data_dir: Path to browser profile directory for persistent sessions.
+                           Cookies, cache, localStorage, and login state are preserved
+                           across runs. If None, uses a fresh ephemeral browser each time.
+            proxy: Proxy server URL (e.g. "http://proxy:8080"). Optional.
         """
         self._headless = headless
         self._viewport = {"width": viewport_width, "height": viewport_height}
@@ -173,6 +183,9 @@ class BrowserInterface:
         self._slow_mo = slow_mo
         self._user_agent = user_agent
         self._capture_console = capture_console
+        self._user_data_dir = user_data_dir
+        self._proxy = proxy
+        self._persistent = False  # True when using launch_persistent_context
         self._playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -187,17 +200,56 @@ class BrowserInterface:
         self.stop(); return False
 
     def start(self):
-        """Launch Chromium and create a page. Hooks up devtools listeners."""
+        """Launch Chromium and create a page. Hooks up devtools listeners.
+
+        If user_data_dir was provided, uses launch_persistent_context() which
+        preserves cookies, cache, and login state between runs. Otherwise
+        launches a fresh ephemeral browser.
+        """
         if self._started:
             raise RuntimeError("Already started. Call stop() first.")
         self._playwright = sync_playwright().start()
-        self.browser = self._playwright.chromium.launch(headless=self._headless, slow_mo=self._slow_mo)
+
+        # Shared context args
         ctx_args = {"viewport": self._viewport}
         if self._user_agent:
             ctx_args["user_agent"] = self._user_agent
-        self.context = self.browser.new_context(**ctx_args)
+        if self._proxy:
+            ctx_args["proxy"] = {"server": self._proxy}
+
+        if self._user_data_dir:
+            # --- Persistent mode ---
+            # launch_persistent_context returns a BrowserContext directly
+            # (no separate Browser object). Profile data is saved to disk.
+            Path(self._user_data_dir).mkdir(parents=True, exist_ok=True)
+            self.context = self._playwright.chromium.launch_persistent_context(
+                user_data_dir=self._user_data_dir,
+                headless=self._headless,
+                slow_mo=self._slow_mo,
+                **ctx_args,
+            )
+            self.browser = None  # no separate browser in persistent mode
+            self._persistent = True
+        else:
+            # --- Ephemeral mode (original behavior) ---
+            # Proxy goes on launch() for ephemeral mode; remove from ctx_args
+            # to avoid passing it twice (launch + new_context)
+            launch_args = {}
+            if self._proxy:
+                launch_args["proxy"] = {"server": self._proxy}
+                ctx_args.pop("proxy", None)
+            self.browser = self._playwright.chromium.launch(
+                headless=self._headless, slow_mo=self._slow_mo, **launch_args,
+            )
+            self.context = self.browser.new_context(**ctx_args)
+            self._persistent = False
+
         self.context.set_default_timeout(self._timeout)
-        self.page = self.context.new_page()
+        # Reuse existing blank tab if persistent context opened one, else create
+        if self.context.pages:
+            self.page = self.context.pages[-1]
+        else:
+            self.page = self.context.new_page()
         self.devtools = DevTools()
         if self._capture_console:
             self._attach_devtools_listeners()
@@ -250,16 +302,25 @@ class BrowserInterface:
         page.on("response", on_response)
 
     def stop(self):
-        """Close browser. Safe to call multiple times. DevTools data preserved."""
+        """Close browser. Safe to call multiple times. DevTools data preserved.
+
+        In persistent mode, closing the context saves profile data to disk.
+        """
         if not self._started: return
         try:
-            if self.context: self.context.close()
-            if self.browser: self.browser.close()
+            if self._persistent:
+                # Persistent mode: context IS the browser, closing it saves state
+                if self.context: self.context.close()
+            else:
+                # Ephemeral mode: close context then browser
+                if self.context: self.context.close()
+                if self.browser: self.browser.close()
             if self._playwright: self._playwright.stop()
         except Exception: pass
         finally:
             self.page = self.context = self.browser = self._playwright = None
             self._started = False
+            self._persistent = False
 
     def clear_devtools(self):
         """Clear all captured devtools data (console, errors, network)."""
