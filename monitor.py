@@ -234,8 +234,8 @@ def check_for_mention(message: dict, agent: dict) -> bool:
         if mention.lower() in text:
             return True
     
-    # Route audio/voice messages to Nova (PM) for transcription and action
-    if agent["name"].lower() == "nova" and has_audio_attachment(message):
+    # Route audio/voice messages to the agent for transcription and action
+    if has_audio_attachment(message):
         return True
     
     return False
@@ -291,7 +291,7 @@ Text: {msg.get('text', '')}{audio_info}{thread_info}
 """
     
     # Build the batched prompt
-    prompt = f"""You are {agent_name} {agent_emoji}, the {agent_role} on the NinjaSquad project team.
+    prompt = f"""You are {agent_name} {agent_emoji}, the {agent_role}.
 
 You have {len(pending_messages)} message(s) that need your response. Read ALL of them and respond to EACH ONE.
 
@@ -391,7 +391,7 @@ def main():
 ║  Max runtime: {MAX_RUNTIME // 60} minutes
 ║  Mentions: {', '.join(agent['mentions'])}
 ║  Thread replies: ✅ Enabled
-║  Audio/voice detection: ✅ Enabled (routed to Nova)
+║  Audio/voice detection: ✅ Enabled
 ║  Batch mode: ✅ Enabled (one Claude call per cycle)
 ║  Rate limit backoff: ✅ Enabled ({BACKOFF_INITIAL}s-{BACKOFF_MAX}s)
 ╚══════════════════════════════════════════════════════════════╝

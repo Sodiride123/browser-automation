@@ -800,11 +800,42 @@ Configuration:
         logger.info(f"Running single task: {args.task}")
         run_agent(agent, args.task)
     else:
+        import multiprocessing
+
         work_task = "Check Slack for new requests, do your work, update your memory file."
-        logger.info("🚀 Starting work process...")
+
+        def run_monitor():
+            """Run monitor.py in a subprocess."""
+            subprocess.run(
+                ["python", "monitor.py"],
+                cwd=str(REPO_ROOT),
+            )
+
+        logger.info("🚀 Starting two parallel processes...")
+        logger.info("   Process 1: Work mode (Claude agent)")
+        logger.info("   Process 2: Monitor mode (Slack watcher)")
         logger.info("   Press Ctrl+C to stop")
-        run_agent(agent, work_task)
-        logger.info("✅ Work process completed")
+
+        p1 = multiprocessing.Process(target=run_agent, args=(agent, work_task))
+        p2 = multiprocessing.Process(target=run_monitor)
+        processes = [p1, p2]
+
+        try:
+            for p in processes:
+                p.start()
+                logger.debug(f"Process {p.name} started with PID {p.pid}")
+
+            for p in processes:
+                p.join()
+        except KeyboardInterrupt:
+            logger.info("👋 Stopping processes...")
+            for p in processes:
+                p.terminate()
+            for p in processes:
+                p.join()
+            logger.info("All processes terminated")
+
+        logger.info("✅ Both processes completed")
 
 
 if __name__ == "__main__":
