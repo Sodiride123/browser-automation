@@ -36,7 +36,7 @@ def _find_project_root() -> Path:
 
 NINJA_SQUAD_DIR = _find_project_root()
 LOGS_DIR = Path("/workspace/logs")
-AVATAR_BASE_URL = "https://sites.super.betamyninja.ai/44664728-914e-4c05-bdf2-d171ad4edcb3/5e27c2ca"
+AVATAR_BASE_URL = "https://sites.super.betamyninja.ai/44664728-914e-4c05-bdf2-d171ad4edcb3/1be98e7b"
 
 # Claude session data
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
