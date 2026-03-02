@@ -511,7 +511,7 @@ def _read_channel_mirror(cache_key: str) -> Optional[List[Dict]]:
 # Each agent has a unique identity with custom avatar for Slack messages.
 # Avatars are hosted on a public URL and displayed in Slack when sending messages.
 
-AVATAR_BASE_URL = "https://sites.super.betamyninja.ai/44664728-914e-4c05-bdf2-d171ad4edcb3/5e27c2ca"
+AVATAR_BASE_URL = "https://sites.super.betamyninja.ai/44664728-914e-4c05-bdf2-d171ad4edcb3/33b03311"
 
 AGENT_AVATARS = {
     "nova": {
@@ -545,6 +545,14 @@ AGENT_AVATARS = {
         "color": "green",
         "icon_url": f"{AVATAR_BASE_URL}/scout.png",
         "icon_emoji": ":mag:"
+    },
+    "phantom": {
+        "name": "Phantom",
+        "role": "Browser Automation Agent",
+        "emoji": "👻",
+        "color": "gray",
+        "icon_url": f"{AVATAR_BASE_URL}/phantom.png",
+        "icon_emoji": ":ghost:"
     }
 }
 
@@ -1698,8 +1706,9 @@ def cmd_say(client: SlackClient, tokens: SlackTokens, args) -> None:
     """Send a message to the default channel as the configured agent."""
     config = SlackConfig.load(args.config_file)
     
-    # Use agent from config (REQUIRED - must be set first)
-    agent = config.default_agent.lower() if config.default_agent else None
+    # Use -a flag if provided, otherwise fall back to config default
+    agent = (args.agent.lower() if hasattr(args, 'agent') and args.agent
+             else config.default_agent.lower() if config.default_agent else None)
     
     if not agent:
         print("❌ No default agent configured", file=sys.stderr)
@@ -2320,6 +2329,7 @@ For more info: https://github.com/NinjaTech-AI/agent-team-logo-creator
     say_parser = subparsers.add_parser('say', help='Send message as configured agent')
     say_parser.add_argument('message', help='Message text')
     say_parser.add_argument('-t', '--thread', help='Thread timestamp for reply')
+    say_parser.add_argument('-a', '--agent', help='Override default agent (e.g., phantom, nova, bolt)')
     
     # Read command (read messages from default channel)
     read_parser = subparsers.add_parser('read', help='Read messages from default channel')

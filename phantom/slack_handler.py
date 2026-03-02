@@ -34,21 +34,14 @@ def phantom_say(message: str, thread_ts: Optional[str] = None):
     """Post a message to Slack as Phantom with its own identity."""
     cmd = [
         "python", "slack_interface.py", "say", message,
-        "--agent-name", PHANTOM_NAME,
-        "--agent-emoji", PHANTOM_EMOJI,
+        "-a", "phantom",
     ]
     if thread_ts:
         cmd.extend(["-t", thread_ts])
 
-    # Try with custom agent identity
     result = subprocess.run(cmd, capture_output=True, text=True)
-
-    # Fallback: if the custom agent flags aren't supported, use raw say
     if result.returncode != 0:
-        cmd_fallback = ["python", "slack_interface.py", "say", f"👻 {message}"]
-        if thread_ts:
-            cmd_fallback.extend(["-t", thread_ts])
-        subprocess.run(cmd_fallback, capture_output=True)
+        print(f"[phantom] Slack send failed: {result.stderr}")
 
 
 def phantom_upload(file_path: str, title: str = "", thread_ts: Optional[str] = None):

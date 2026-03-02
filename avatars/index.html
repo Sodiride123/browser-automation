@@ -56,6 +56,7 @@
         .agent-card.pixel { border-color: rgba(255, 20, 147, 0.5); }
         .agent-card.bolt { border-color: rgba(255, 215, 0, 0.5); }
         .agent-card.scout { border-color: rgba(50, 205, 50, 0.5); }
+        .agent-card.phantom { border-color: rgba(128, 90, 213, 0.5); }
         .avatar {
             width: 200px;
             height: 200px;
@@ -68,6 +69,7 @@
         .agent-card.pixel .avatar { border-color: rgba(255, 20, 147, 0.7); }
         .agent-card.bolt .avatar { border-color: rgba(255, 215, 0, 0.7); }
         .agent-card.scout .avatar { border-color: rgba(50, 205, 50, 0.7); }
+        .agent-card.phantom .avatar { border-color: rgba(128, 90, 213, 0.7); }
         .agent-name {
             font-size: 1.8rem;
             font-weight: bold;
@@ -77,6 +79,7 @@
         .agent-card.pixel .agent-name { color: #e91e63; }
         .agent-card.bolt .agent-name { color: #f1c40f; }
         .agent-card.scout .agent-name { color: #2ecc71; }
+        .agent-card.phantom .agent-name { color: #805ad5; }
         .agent-role {
             color: #aaa;
             font-size: 1rem;
@@ -98,6 +101,7 @@
         .agent-card.pixel .badge { background: rgba(255, 20, 147, 0.3); color: #e91e63; }
         .agent-card.bolt .badge { background: rgba(255, 215, 0, 0.3); color: #f1c40f; }
         .agent-card.scout .badge { background: rgba(50, 205, 50, 0.3); color: #2ecc71; }
+        .agent-card.phantom .badge { background: rgba(128, 90, 213, 0.3); color: #805ad5; }
         .url-section {
             margin-top: 50px;
             background: rgba(255, 255, 255, 0.05);
@@ -172,6 +176,14 @@
                 <div class="agent-role">QA Engineer</div>
                 <span class="badge">QA</span>
             </div>
+            
+            <div class="agent-card phantom">
+                <div class="agent-emoji">👻</div>
+                <img src="phantom.png" alt="Phantom" class="avatar">
+                <div class="agent-name">Phantom</div>
+                <div class="agent-role">Browser Automation Agent</div>
+                <span class="badge">WEB</span>
+            </div>
         </div>
         
         <div class="url-section">
@@ -191,6 +203,10 @@
             <div class="url-item">
                 <img src="scout.png" alt="Scout">
                 <code id="scout-url">scout.png</code>
+            </div>
+            <div class="url-item">
+                <img src="phantom.png" alt="Phantom">
+                <code id="phantom-url">phantom.png</code>
             </div>
         </div>
         
