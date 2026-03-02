@@ -1,40 +1,11 @@
 """
 Centralized Agent Configuration
 
-This module provides a single source of truth for agent definitions.
-All agent-related scripts should import from here instead of defining their own.
+Single-agent configuration for Phantom (Browser Automation Agent).
 """
 
 # Agent definitions - single source of truth
 AGENTS = {
-    "nova": {
-        "name": "Nova",
-        "role": "Product Manager",
-        "emoji": "🌟",
-        "spec": "NOVA_SPEC.md",
-        "mentions": ["nova", "Nova", "@nova"],
-    },
-    "pixel": {
-        "name": "Pixel",
-        "role": "UX Designer",
-        "emoji": "🎨",
-        "spec": "PIXEL_SPEC.md",
-        "mentions": ["pixel", "Pixel", "@pixel"],
-    },
-    "bolt": {
-        "name": "Bolt",
-        "role": "Full-Stack Developer",
-        "emoji": "⚡",
-        "spec": "BOLT_SPEC.md",
-        "mentions": ["bolt", "Bolt", "@bolt"],
-    },
-    "scout": {
-        "name": "Scout",
-        "role": "QA Engineer",
-        "emoji": "🔍",
-        "spec": "SCOUT_SPEC.md",
-        "mentions": ["scout", "Scout", "@scout"],
-    },
     "phantom": {
         "name": "Phantom",
         "role": "Browser Automation Agent",

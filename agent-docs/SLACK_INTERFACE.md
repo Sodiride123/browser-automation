@@ -40,7 +40,7 @@ Click the **'Connect'** button in the chat interface to link your Slack workspac
 python slack_interface.py config --set-channel "#your-channel"
 
 # Set your default agent (REQUIRED for 'say' command)
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 ```
 
 ### 3. Send Messages
@@ -72,17 +72,14 @@ The `say` command **requires an agent identity** to be configured first.
 
 | Agent | Role | Emoji | Color |
 |-------|------|-------|-------|
-| `nova` | Product Manager | 🌟 | Purple |
-| `pixel` | UX Designer | 🎨 | Pink |
-| `bolt` | Full-Stack Developer | ⚡ | Yellow |
-| `scout` | QA Engineer | 🔍 | Green |
+| `phantom` | Browser Automation Agent | 👻 | Purple |
 
 ```bash
 # List all agents
 python slack_interface.py agents
 
 # Configure your agent identity (do this first!)
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 
 # Then send messages as that agent
 python slack_interface.py say "Sprint planning at 2pm"
@@ -98,7 +95,7 @@ The configuration is stored at `~/.agent_settings.json`:
 {
   "default_channel": "#your-channel",
   "default_channel_id": "C0AAAAMBR1R",
-  "default_agent": "nova",
+  "default_agent": "phantom",
   "workspace": "YourWorkspace"
 }
 ```
@@ -113,7 +110,7 @@ python slack_interface.py config --set-channel "#your-channel"
 python slack_interface.py config --set-channel "C0AAAAMBR1R"
 
 # Set default agent (REQUIRED before using 'say')
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 
 # View current config
 python slack_interface.py config
@@ -137,7 +134,7 @@ python slack_interface.py config
 python slack_interface.py config --set-channel "#channel-name"
 
 # Set default agent
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 ```
 
 ### Messaging with Agents
@@ -254,7 +251,7 @@ if not slack.is_connected:
 slack.say("Hello team!")
 
 # Send with custom username and icon
-slack.say("Hello!", username="Nova", icon_url="https://example.com/nova.png")
+slack.say("Hello!", username="Phantom", icon_url="https://example.com/phantom.png")
 ```
 
 ### File Upload Example
@@ -314,8 +311,8 @@ for msg in messages:
 # Send message with custom identity
 result = slack.say(
     "Hello from the API!",
-    username="Nova",
-    icon_url="https://sites.super.betamyninja.ai/.../nova.png"
+    username="Phantom",
+    icon_url="https://sites.super.betamyninja.ai/.../phantom.png"
 )
 if result.get('ok'):
     print(f"Message sent! ts={result['ts']}")
@@ -423,12 +420,12 @@ No Slack tokens found. Please connect your Slack workspace first.
 🤖 The 'say' command requires an agent identity.
 
 💡 To configure your agent:
-   python slack_interface.py config --set-agent nova
+   python slack_interface.py config --set-agent phantom
 ```
 
 **Solution**: Set a default agent:
 ```bash
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 ```
 
 ### "No default channel configured" Error
@@ -478,13 +475,13 @@ File uploads require the `files:write` scope.
 python slack_interface.py config --set-channel "#your-channel"
 
 # 3. Set default agent
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 
 # 4. Verify setup
 python slack_interface.py config
 
 # 5. Test messaging
-python slack_interface.py say "🤖 Nova is online and ready!"
+python slack_interface.py say "👻 Phantom is online and ready!"
 ```
 
 ### Multi-Agent Communication
@@ -492,21 +489,9 @@ python slack_interface.py say "🤖 Nova is online and ready!"
 Each agent session should configure its own identity:
 
 ```bash
-# Nova's session
-python slack_interface.py config --set-agent nova
-python slack_interface.py say "📋 Sprint planning starts in 10 minutes!"
-
-# Pixel's session
-python slack_interface.py config --set-agent pixel
-python slack_interface.py say "🎨 New mockups uploaded to Figma"
-
-# Bolt's session
-python slack_interface.py config --set-agent bolt
-python slack_interface.py say "⚡ Feature branch merged to main"
-
-# Scout's session
-python slack_interface.py config --set-agent scout
-python slack_interface.py say "🔍 All tests passing - ready for release"
+# Phantom's session
+python slack_interface.py config --set-agent phantom
+python slack_interface.py say "👻 Task complete - search results posted"
 ```
 
 ### File Upload Workflow

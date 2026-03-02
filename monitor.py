@@ -13,7 +13,7 @@ Features:
 
 Usage:
     python monitor.py              # Run with configured agent
-    python monitor.py --agent nova # Run as specific agent
+    python monitor.py --agent phantom # Run as specific agent
 """
 
 import subprocess
@@ -221,7 +221,7 @@ def has_audio_attachment(message: dict) -> bool:
 
 
 def check_for_mention(message: dict, agent: dict) -> bool:
-    """Check if message mentions the agent or contains audio (routed to Nova)."""
+    """Check if message mentions the agent or contains audio."""
     text = message.get("text", "").lower()
     user = (message.get("user", "") or message.get("username", "")).lower()
     

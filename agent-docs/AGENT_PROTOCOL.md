@@ -4,33 +4,22 @@
 
 This document defines the communication standards and protocols for agent interaction within the team Slack channel using the `slack_interface.py` CLI tool.
 
-## 🚨 CRITICAL: Workflow Dependencies
+## 🚨 CRITICAL: Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     PROJECT INITIALIZATION PROTOCOL                      │
+│                     TASK EXECUTION PROTOCOL                              │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│   STEP 1: PM Agent Initializes Project                                  │
-│   ────────────────────────────────────                                  │
-│   • PM completes onboarding                                             │
-│   • PM interviews stakeholders via Slack                                │
-│   • PM writes PRD → agent-docs/PRD.md                                   │
-│   • PM creates GitHub Issues for all tasks                              │
-│   • PM assigns issues to agents                                         │
-│   • PM runs orchestrator                                                │
-│                                                                          │
-│   STEP 2: Other Agents Start Work                                       │
-│   ───────────────────────────────                                       │
-│   • All agents complete onboarding                                      │
-│   • Check for PRD: cat agent-docs/PRD.md                                │
-│   • Check for assigned issues: gh issue list --assignee @me             │
-│   • If no PRD/issues → ask PM in Slack and WAIT                         │
-│   • Run orchestrator: python orchestrator.py                            │
+│   1. Agent receives task via Slack or --task flag                        │
+│   2. Agent reads spec: cat agent-docs/PHANTOM_SPEC.md                   │
+│   3. Agent executes task using browser toolkit                           │
+│   4. Agent reports results back to Slack                                 │
+│   5. Agent updates memory: memory/phantom_memory.md                     │
 │                                                                          │
 │   WAKE UP INSTRUCTION                                                    │
 │   ═══════════════════                                                    │
-│   When any agent receives "WAKE UP" → Run: python orchestrator.py       │
+│   When agent receives "WAKE UP" → Run: python orchestrator.py           │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -108,7 +97,7 @@ python slack_interface.py say "✅ Implemented API endpoints for user auth
 
 ## Agent Identities
 
-Agents are configured in `agents_config.py`. Each agent has a name, role, emoji, and custom avatar. The PM agent initializes the project; other agents wait for PRD and issue assignments before starting work.
+The agent is configured in `agents_config.py` with a name, role, emoji, and custom avatar.
 
 Stakeholders are human team members who provide direction, approve work, and can override agent decisions.
 
@@ -145,7 +134,7 @@ I've completed onboarding but don't see:
 - PRD document (agent-docs/PRD.md)
 - GitHub issues assigned to me
 
-Could the PM please create the PRD and assign tasks? Ready to start!"
+Ready to start! Awaiting task assignment."
 ```
 
 ### Sync / Session Update Messages
@@ -216,7 +205,7 @@ python slack_interface.py say "📊 **Cycle Summary**
 
 ### 2. Mention Protocol
 - Mention relevant agents when their input is needed
-- Mention PM for escalations and blockers
+- Report escalations and blockers in Slack
 - Use `@channel` sparingly (emergencies only)
 
 ### 3. Response Expectations
@@ -290,29 +279,11 @@ Slack users (and other agents) may send **audio messages** or **voice clips** in
 
 ## Interaction Patterns
 
-### PM → Other Agents
+### Stakeholder → Agent
 ```
 Direction Flow:
-PM ──assigns──▶ Designer (design tasks)
-PM ──assigns──▶ Developer (dev tasks)
-PM ──assigns──▶ QA (testing tasks)
-
-Review Flow:
-PM ◀──reviews── All agents (PRs, work)
-```
-
-### Designer → Developer
-```
-Design Handoff:
-Designer ──designs──▶ Developer
-Designer ◀──questions── Developer (clarifications)
-```
-
-### Developer → QA
-```
-Testing Flow:
-Developer ──code ready──▶ QA
-Developer ◀──bug reports── QA
+Stakeholder ──task──▶ Phantom (via Slack or --task flag)
+Phantom ──results──▶ Stakeholder (via Slack)
 ```
 
 ### Stakeholders → Agents
@@ -352,7 +323,7 @@ Please address these"
 ### Agent Failure
 ```
 If an agent fails to respond during sync:
-1. PM notes the absence
+1. Agent notes the absence
 2. Work continues with available agents
 3. Failed agent catches up next cycle via memory
 ```
@@ -497,5 +468,5 @@ python orchestrator.py
 ```
 
 This starts:
-- **PM Agent**: Work process + Monitor process (watches for Slack mentions)
-- **Other agents**: Work process only
+- **Work process**: Executes the current task using browser toolkit
+- **Monitor process**: Watches for new Slack mentions

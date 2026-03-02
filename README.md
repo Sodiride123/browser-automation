@@ -1,110 +1,105 @@
-# NinjaSquad 🥷
+# Phantom 👻
 
-![NinjaSquad Team](cover_photo.png)
+**An autonomous browser automation agent powered by Claude Code and Playwright.**
 
-**A bootstrap template for creating multi-agent AI teams powered by collaborative AI agents communicating via Slack.**
-
-NinjaSquad is a framework for orchestrating multiple AI agents that work together like a real team. Each agent has a specialized role, personality, and set of responsibilities. They communicate through Slack, maintain persistent memory across sessions, and coordinate their work through GitHub.
-
-## 🤖 The Default Agent Team
-
-| Agent | Role | Responsibilities |
-|-------|------|------------------|
-| **Nova** 🌟 | Product Manager | PRD interviews, GitHub issues/PRs, task coordination, code reviews |
-| **Pixel** 🎨 | UX Designer | High-level UX designs, wireframes, visual mockups |
-| **Bolt** ⚡ | Full-Stack Developer | Frontend & backend implementation, code commits |
-| **Scout** 🔍 | QA Engineer | Testing, bug reports, quality assurance |
-
-## ✨ Features
-
-- **Multi-Agent Orchestration** - Run multiple AI agents in coordinated cycles
-- **Slack Communication** - Agents communicate via Slack with custom avatars
-- **Persistent Memory** - Each agent maintains context across sessions
-- **GitHub Integration** - Automatic issue tracking, PRs, and code commits
-- **Customizable Agents** - Define agent personalities via Markdown spec files
-- **Retry & Token Refresh** - Built-in resilience for API rate limits and token expiration
+Phantom is a browser automation agent that receives tasks via Slack, executes them in a real browser using Playwright, and reports results back. It uses Claude Code as its brain (planning, reasoning, decision-making) and a Playwright-based toolkit as its hands and eyes.
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                       ORCHESTRATOR                                  │
-│                    (orchestrator.py)                                │
+│                    (orchestrator.py)                                 │
 │                                                                     │
-│   Runs Claude Code for each agent in sequence                       │
-│   Each agent's prompt is built from their spec MD file              │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+│   Launches Claude Code with PHANTOM_SPEC.md as the system prompt    │
+│   Runs work + monitor processes in parallel                         │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         TOOLS                                       │
+│                      CLAUDE CODE (Brain)                            │
 │                                                                     │
-│   ┌─────────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│   │slack_interface  │  │ Image Gen   │  │  Internet   │            │
-│   │  (all agents)   │  │(Pixel only) │  │   Search    │            │
-│   └─────────────────┘  └─────────────┘  └─────────────┘            │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+│   Reads PHANTOM_SPEC.md → plans actions → calls toolkit             │
+│   Decides what to observe, click, type, navigate                    │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     AGENT SPECS (Prompts)                           │
-│                      agent-docs/*.md                                │
+│                     PHANTOM TOOLKIT                                  │
 │                                                                     │
-│   NOVA_SPEC.md → PIXEL_SPEC.md → BOLT_SPEC.md → SCOUT_SPEC.md      │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐     │
+│   │   Observer    │  │   Actions    │  │  Browser Server      │     │
+│   │  (the eyes)  │  │  (the hands) │  │  (persistent Chrome) │     │
+│   └──────────────┘  └──────────────┘  └──────────────────────┘     │
+│                                                                     │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐     │
+│   │     VNC      │  │   Presets    │  │      Config          │     │
+│   │ (human help) │  │ (templates)  │  │   (settings)         │     │
+│   └──────────────┘  └──────────────┘  └──────────────────────┘     │
 └─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     SLACK CHANNEL                                   │
-│                  (configurable)                                     │
+│                     COMMUNICATION                                    │
 │                                                                     │
-│   All agents + humans communicate here                              │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      MEMORY FILES                                   │
-│                       memory/*.md                                   │
-│                                                                     │
-│   Each agent persists context between sessions                      │
+│   ┌──────────────────┐  ┌──────────────────────────────────────┐   │
+│   │  Slack Interface  │  │  Memory (persistent context)         │   │
+│   │  (input/output)   │  │  memory/phantom_memory.md            │   │
+│   └──────────────────┘  └──────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Key Design Decisions
+
+- **Persistent Browser**: Chromium runs as a background server on port 9222. Tasks connect via CDP — tabs, cookies, and state survive across tasks.
+- **Claude Code as Brain**: No hardcoded agent loop. Claude Code reads the spec, plans, and calls observer/actions directly.
+- **Self-Healing Selectors**: Actions module tries multiple selector strategies (ID, text, aria, CSS) and falls back automatically.
+- **Set-of-Mark (SoM) Labels**: Observer overlays numbered labels on interactive elements for reliable element targeting.
 
 ## 📁 Project Structure
 
 ```
-ninja-squad/
+browser-automation/
 ├── README.md
 ├── requirements.txt
-├── slack_interface.py       # Slack communication CLI tool
+├── orchestrator.py              # Main orchestrator — launches Claude Code
+├── monitor.py                   # Slack message monitor (runs in parallel)
+├── slack_interface.py           # Slack communication CLI tool
+├── browser_interface.py         # Playwright browser wrapper (CDP + ephemeral)
+├── agents_config.py             # Agent configuration (Phantom)
+├── claude-wrapper.sh            # Claude Code launcher with retry logic
+├── settings.json                # LiteLLM gateway settings
+├── tavily_client.py             # Web search client
 │
-├── agent-docs/              # Agent specifications (prompts)
-│   ├── ARCHITECTURE.md
-│   ├── AGENT_PROTOCOL.md
-│   ├── ONBOARDING.md        # Agent onboarding guide
-│   ├── SLACK_INTERFACE.md   # Slack tool documentation
-│   ├── NOVA_SPEC.md         # Nova's behavior & personality
-│   ├── PIXEL_SPEC.md        # Pixel's behavior & personality
-│   ├── BOLT_SPEC.md         # Bolt's behavior & personality
-│   └── SCOUT_SPEC.md        # Scout's behavior & personality
+├── phantom/                     # Browser automation toolkit
+│   ├── observer.py              # Page observer — screenshots + accessibility tree
+│   ├── actions.py               # Action executor — click, type, navigate, etc.
+│   ├── browser_server.py        # Persistent Chromium server (port 9222)
+│   ├── config.py                # Configuration (viewport, timeouts, paths)
+│   ├── presets.py               # Pre-built task templates
+│   ├── vnc.py                   # VNC URL generation for human assistance
+│   └── tests/                   # Tests for toolkit modules
 │
-├── memory/                  # Agent memory files
-│   ├── nova_memory.md
-│   ├── pixel_memory.md
-│   ├── bolt_memory.md
-│   └── scout_memory.md
+├── agent-docs/                  # Agent documentation
+│   ├── PHANTOM_SPEC.md          # Phantom's behavior spec (Claude Code prompt)
+│   ├── SLACK_INTERFACE.md       # Slack tool documentation
+│   ├── LITELLM_GUIDE.md        # LiteLLM gateway guide
+│   └── MODELS.md               # Available AI models
 │
-├── avatars/                 # Agent avatar images
-│   ├── nova.png
-│   ├── pixel.png
-│   ├── bolt.png
-│   └── scout.png
+├── memory/                      # Persistent agent memory
+│   └── phantom_memory.md        # Context preserved across sessions
 │
-├── scripts/                 # Utility scripts
-│   └── reset_project.py     # Reset project to clean state
+├── dashboard/                   # Flask web dashboard (port 9000)
+│   └── app.py
 │
-├── orchestrator.py          # Main orchestrator
-└── monitor.py               # Slack message monitor
+├── avatars/                     # Agent avatar images
+│   └── phantom.png
+│
+├── utils/                       # Shared AI model library
+│   ├── chat.py
+│   └── litellm_client.py
+│
+└── logs/                        # Execution logs
 ```
 
 ## 🚀 Quick Start
@@ -113,45 +108,22 @@ ninja-squad/
 
 - Python 3.11+
 - Claude Code CLI
-- GitHub CLI (`gh`)
 - Slack workspace with a dedicated channel
 - Slack bot token with required scopes
 
 ### Installation
 
 ```bash
-# Clone the bootstrap template
-git clone https://github.com/NinjaTech-AI/ninja-squad.git
-cd ninja-squad
-
-# Install dependencies
+cd browser-automation
 pip install -r requirements.txt
 ```
-
-### Setup New Project
-
-Use the setup script to create your project repository:
-
-```bash
-# Create new repo under your account
-python scripts/setup_github.py my-project
-
-# Or create under an organization
-python scripts/setup_github.py MyOrg/my-project
-```
-
-This will:
-1. Create a private GitHub repository
-2. Copy all bootstrap files to `/workspace/my-project`
-3. Push initial commit
-4. Clean up the ninja-squad bootstrap folder
 
 ### Configuration
 
 ```bash
-# Configure Slack (required before use)
+# Configure Slack
 python slack_interface.py config --set-channel "#your-channel"
-python slack_interface.py config --set-agent nova
+python slack_interface.py config --set-agent phantom
 
 # Test Slack connection
 python slack_interface.py scopes
@@ -161,128 +133,53 @@ python slack_interface.py read
 ### Usage
 
 ```bash
-# Run all agents (Nova → Pixel → Bolt → Scout)
+# Run Phantom (listens for Slack messages + monitors)
 python orchestrator.py
 
-# Run a specific agent
-python orchestrator.py --agent Nova
-python orchestrator.py --agent Pixel --task "Create homepage wireframe"
+# Run a single task
+python orchestrator.py --task "Search Google for NinjaTech AI and report results"
 
-# List available agents
-python orchestrator.py --list
+# Start the browser server manually
+python -m phantom.browser_server start
 
-# Test all capabilities
-python orchestrator.py --test
+# Check browser server status
+python -m phantom.browser_server status
+
+# Run the dashboard
+python dashboard/app.py
 ```
 
 ## 🔧 Slack Interface
 
-All agent communication uses the `slack_interface.py` CLI tool:
-
 ```bash
-# Send messages as configured agent
-python slack_interface.py say "Hello team!"
-
-# Send as a specific agent
-python slack_interface.py say -a nova "Sprint planning at 2pm!"
-python slack_interface.py say -a pixel "Design review ready"
+# Send messages as Phantom
+python slack_interface.py say "Task complete — found 5 results"
 
 # Read messages from the channel
 python slack_interface.py read              # Last 50 messages
 python slack_interface.py read -l 100       # Last 100 messages
 
-# Upload files
-python slack_interface.py upload design.png --title "New Design"
+# Upload files (screenshots, reports)
+python slack_interface.py upload screenshot.png --title "Search Results"
 
 # Show configuration
 python slack_interface.py config
-
-# List all agents
-python slack_interface.py agents
 ```
-
-### Features
-
-- **Custom Avatars** - Each agent has a unique robot avatar
-- **Rate Limiting** - Automatic retry with exponential backoff
-- **Token Refresh** - Auto-refreshes expired tokens from `/dev/shm/mcp-token`
-- **Configurable Defaults** - Set default channel and agent identity
 
 See [agent-docs/SLACK_INTERFACE.md](agent-docs/SLACK_INTERFACE.md) for complete documentation.
 
-## 🎯 Customization
+## 🖥️ VNC Access
 
-### Creating Your Own Agent Team
-
-1. **Define Agent Specs** - Create/modify `agent-docs/*_SPEC.md` files
-2. **Create Avatars** - Add custom avatar images to `avatars/`
-3. **Update Config** - Modify `agents_config.py` with your agents
-4. **Set Up Memory** - Create memory files in `memory/`
-
-### Agent Spec Template
-
-Each agent spec file (`agent-docs/*_SPEC.md`) defines:
-- Agent identity and role
-- Personality traits
-- Responsibilities and capabilities
-- Communication style
-- Workflow rules
-
-### Workflow Customization
-
-The default workflow is:
-1. **Nova** (PM) creates PRD and GitHub issues
-2. **Pixel** (UX) creates designs based on PRD
-3. **Bolt** (Dev) implements the designs
-4. **Scout** (QA) tests and reports bugs
-
-Modify `orchestrator.py` to change the agent order or add new agents.
-
-## 🔄 How It Works
-
-### Orchestration Cycle
-
-1. **Wake Up** - Orchestrator triggers agents in sequence
-2. **Read Spec** - Each agent loads their personality from spec file
-3. **Check Memory** - Agent reads context from previous sessions
-4. **Check Slack** - Agent reads recent messages for context
-5. **Execute Task** - Agent performs their work
-6. **Update Memory** - Agent saves context for next session
-7. **Commit** - Agent pushes changes to GitHub
-
-### Agent Communication
-
-Agents communicate through Slack:
-- Post status updates
-- Ask questions to humans
-- Coordinate with other agents
-- Share deliverables
-
-## 🛠️ Scripts
-
-### Reset Project
-
-Clean up agent-created files and reset to bootstrap state:
-
-```bash
-# Dry run (see what would be deleted)
-python scripts/reset_project.py --dry-run
-
-# Full reset (deletes files and GitHub issues)
-python scripts/reset_project.py
-
-# Skip GitHub issue deletion
-python scripts/reset_project.py --skip-issues
-```
+When Phantom encounters CAPTCHAs or needs human help, it posts a VNC link to Slack. Click the link to view and interact with the browser in real-time.
 
 ## 📚 Documentation
 
 | Document | Description |
 |----------|-------------|
-| [ONBOARDING.md](agent-docs/ONBOARDING.md) | Agent onboarding guide |
-| [ARCHITECTURE.md](agent-docs/ARCHITECTURE.md) | System architecture |
-| [AGENT_PROTOCOL.md](agent-docs/AGENT_PROTOCOL.md) | Agent communication protocol |
+| [PHANTOM_SPEC.md](agent-docs/PHANTOM_SPEC.md) | Phantom's behavior specification |
 | [SLACK_INTERFACE.md](agent-docs/SLACK_INTERFACE.md) | Slack tool documentation |
+| [LITELLM_GUIDE.md](agent-docs/LITELLM_GUIDE.md) | LiteLLM gateway configuration |
+| [MODELS.md](agent-docs/MODELS.md) | Available AI models |
 
 ## 📄 License
 

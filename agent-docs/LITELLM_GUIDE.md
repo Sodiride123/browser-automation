@@ -87,7 +87,7 @@ print(f"Source:  {cfg['source']}")
 Or from the command line:
 
 ```bash
-cd /workspace/ninja-squad
+cd /workspace/browser-automation
 python -m utils.litellm_client
 ```
 
@@ -691,7 +691,7 @@ The key building blocks from `litellm_client.py` are:
 Each utility module has a built-in self-test:
 
 ```bash
-cd /workspace/ninja-squad
+cd /workspace/browser-automation
 
 # Test configuration
 python -m utils.litellm_client

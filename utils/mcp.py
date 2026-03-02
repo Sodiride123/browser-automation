@@ -22,7 +22,7 @@ Quick-start
             "search_type": "CITY",
         })
 
-CLI usage (from ninja-squad/):
+CLI usage (from browser-automation/):
     python -m utils.mcp list                  # list all tools
     python -m utils.mcp search booking        # search tools by name
     python -m utils.mcp call <tool> '{...}'   # call a tool
