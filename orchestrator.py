@@ -491,7 +491,8 @@ def build_prompt(agent: dict, task: str = "") -> str:
 Before starting work, read these files for full context:
 
 1. **Your Specification:** `cat agent-docs/{agent['spec']}`
-2. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
+2. **Agent Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
+3. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
 
 ---
 
@@ -653,6 +654,7 @@ def run_capability_tests() -> bool:
         "phantom/observer.py",
         "phantom/actions.py",
         "agent-docs/PHANTOM_SPEC.md",
+        "agent-docs/AGENT_PROTOCOL.md",
         "agent-docs/SLACK_INTERFACE.md",
         "memory",
     ]
