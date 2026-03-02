@@ -105,36 +105,29 @@ Stakeholders are human team members who provide direction, approve work, and can
 
 ### Project Initialization Messages
 
-#### PM's PRD Interview Start
+#### Task Acknowledgment
 ```bash
-python slack_interface.py say "**PRD Interview**
+python slack_interface.py say "**Task Received**
 
-Hi team! I'd like to understand the vision for this project.
+I've received the browser automation task. Here's my plan:
 
-**Question:** What problem are we solving?
+1. Connect to the persistent browser
+2. Navigate to the target page
+3. Execute the required actions
+4. Report results with screenshots
 
-Take your time — I want to capture your vision accurately!"
+Starting now!"
 ```
 
-#### PM's Issue Creation Announcement
+#### Task Completion
 ```bash
-python slack_interface.py say "**GitHub Issues Created**
+python slack_interface.py say "**Task Complete**
 
-Issues have been created based on the approved PRD. Check your assignments:
-\`gh issue list --assignee @me\`
+Browser automation task finished. Results:
+- Screenshots attached
+- Data extracted and saved
 
-All agents — please review your assigned issues and begin work!"
-```
-
-#### Agent Waiting for Tasks
-```bash
-python slack_interface.py say "**Awaiting Tasks**
-
-I've completed onboarding but don't see:
-- PRD document (agent-docs/PRD.md)
-- GitHub issues assigned to me
-
-Ready to start! Awaiting task assignment."
+Let me know if you need anything else!"
 ```
 
 ### Sync / Session Update Messages
