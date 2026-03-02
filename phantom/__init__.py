@@ -11,11 +11,16 @@ Usage:
     from phantom.actions import execute_action, set_elements
     from browser_interface import BrowserInterface
 
-    browser = BrowserInterface()
-    browser.start()
+    # Connect to persistent browser (preferred — tabs survive between tasks)
+    browser = BrowserInterface.connect_cdp()
     obs = observe(browser, step=0)
     set_elements(obs["interactive_elements"])
     result = execute_action(browser, "click", {"selector": "#submit"})
+    browser.stop()  # Disconnects only — browser keeps running
+
+    # Browser server management
+    from phantom.browser_server import ensure_running
+    ensure_running()  # Starts browser if not already running
 
     # Presets
     from phantom.presets import get_preset_task

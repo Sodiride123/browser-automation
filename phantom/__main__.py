@@ -2,6 +2,7 @@
 Phantom — Browser Automation Agent
 
 Entry point: runs Phantom through the orchestrator (Claude Code via claude-wrapper.sh).
+Ensures the persistent browser server is running before starting.
 
 Usage:
     python -m phantom                          # Default: check Slack, do work
@@ -26,6 +27,11 @@ def main():
         sys.exit(1)
 
     login_github_cli(logger)
+
+    # Ensure persistent browser is running before starting the agent
+    from phantom.browser_server import ensure_running
+    if not ensure_running():
+        logger.warning("⚠️  Browser server failed to start. Phantom can still start it manually.")
 
     agent = AGENTS["phantom"]
 

@@ -41,20 +41,17 @@ All Phantom modules are importable from the repo root. Here's your toolkit:
 
 #### 1. Browser Interface (`browser_interface.py`)
 
-The low-level browser driver. Start here.
+The low-level browser driver. **Always connect to the persistent browser — never launch a new one.**
 
 ```python
 from browser_interface import BrowserInterface
 
-# Create and start browser
-browser = BrowserInterface(
-    headless=False,         # False = visible on VNC, True = no display
-    viewport_width=1280,
-    viewport_height=720,
-    timeout=30000,          # Default timeout in ms
-    user_data_dir="phantom/browser_data/",  # Persistent cookies/cache
-)
-browser.start()
+# ✅ CORRECT: Connect to the persistent browser (tabs survive between tasks)
+browser = BrowserInterface.connect_cdp()
+
+# ❌ WRONG: Don't create a new browser — it won't persist
+# browser = BrowserInterface(...)
+# browser.start()
 
 # Navigation
 browser.goto("https://example.com", wait_until="load")
@@ -104,9 +101,12 @@ browser.sleep(2)
 browser.cookies()
 browser.clear_cookies()
 
-# Cleanup
+# Disconnect when done (browser keeps running, tabs preserved)
 browser.stop()
 ```
+
+> **⚠️ IMPORTANT:** `browser.stop()` only disconnects — it does NOT close the browser.
+> Tabs, cookies, and state persist for the next task. This is by design.
 
 #### 2. Observer (`phantom/observer.py`)
 
@@ -283,22 +283,14 @@ from phantom.observer import observe
 from phantom.actions import execute_action, set_elements, clear_selector_cache
 from phantom.config import PhantomConfig
 
-# 1. Start browser
-config = PhantomConfig.load()
-browser = BrowserInterface(
-    headless=config.headless,
-    viewport_width=config.viewport_width,
-    viewport_height=config.viewport_height,
-    timeout=config.timeout,
-    user_data_dir=config.user_data_dir,
-    proxy=config.proxy,
-)
-browser.start()
+# 1. Connect to persistent browser (already running via browser_server.py)
+browser = BrowserInterface.connect_cdp()
 
 # 2. Navigate to starting URL
 browser.goto("https://example.com", wait_until="load")
 
 # 3. Observe-Think-Act loop
+config = PhantomConfig.load()
 for step in range(config.max_steps):
     # OBSERVE
     obs = observe(browser, step=step, screenshot=True)
@@ -322,9 +314,13 @@ for step in range(config.max_steps):
         # Handle error — try different approach
         pass
 
-# 4. Cleanup
+# 4. Disconnect (browser stays alive — tabs and state persist for next task)
 browser.stop()
 ```
+
+> **NOTE:** Never call `BrowserInterface(...)` + `browser.start()` for Phantom tasks.
+> Always use `BrowserInterface.connect_cdp()` to connect to the persistent browser.
+> The browser server is managed separately via `phantom/browser_server.py`.
 
 ---
 
@@ -358,6 +354,33 @@ request_human_help("CAPTCHA detected", page_url=browser.url)
 
 ---
 
+## Persistent Browser Server
+
+The browser runs as a **persistent background process** managed by `phantom/browser_server.py`.
+It survives across Claude Code sessions — tabs, cookies, and state are preserved between tasks.
+
+```bash
+# Check if browser is running
+python phantom/browser_server.py status
+
+# Start browser (if not running)
+python phantom/browser_server.py start
+
+# Restart browser (kills and relaunches)
+python phantom/browser_server.py restart
+
+# Stop browser
+python phantom/browser_server.py stop
+```
+
+The browser server should already be running when you start a task. If `connect_cdp()` fails
+with a `ConnectionError`, start the server first:
+
+```python
+from phantom.browser_server import ensure_running
+ensure_running()  # Starts browser if not already running
+```
+
 ## VNC: Live Browser Sharing
 
 The browser runs on a virtual display visible via VNC at port 6080. Share the link when:
@@ -370,7 +393,7 @@ from phantom.vnc import get_vnc_url
 vnc_url = get_vnc_url()
 ```
 
-The browser must be in **headed mode** (`headless=False`, the default) for VNC to show anything.
+The persistent browser is always in **headed mode** and visible on VNC.
 
 ---
 
@@ -421,6 +444,7 @@ python slack_interface.py say "👻 🚨 Hit a CAPTCHA on google.com/login
 
 | Path | Purpose |
 |------|---------|
+| `phantom/browser_server.py` | Persistent browser process manager (start/stop/status) |
 | `phantom/screenshots/` | Step-by-step screenshots (step_000.png, step_001.png, ...) |
 | `phantom/browser_data/` | Persistent browser state (cookies, cache, selectors) |
 | `phantom/config.py` | Configuration (model, viewport, timeouts) |
@@ -428,7 +452,7 @@ python slack_interface.py say "👻 🚨 Hit a CAPTCHA on google.com/login
 | `phantom/actions.py` | Action execution with self-healing selectors |
 | `phantom/presets.py` | Pre-built task templates |
 | `phantom/vnc.py` | VNC URL generation and human help requests |
-| `browser_interface.py` | Low-level Playwright browser wrapper |
+| `browser_interface.py` | Low-level Playwright browser wrapper (connect_cdp / start) |
 | `memory/phantom_memory.md` | Your persistent memory file |
 
 ---
@@ -452,7 +476,8 @@ Update this after each task with what you learned about the sites you visited.
 
 | Tool | Purpose | Usage |
 |------|---------|-------|
-| **browser_interface.py** | Browser control | Navigate, click, fill, screenshot, extract |
+| **browser_interface.py** | Browser control | `BrowserInterface.connect_cdp()` → navigate, click, fill, screenshot |
+| **phantom/browser_server.py** | Browser lifecycle | Start/stop/status of persistent Chromium process |
 | **phantom/observer.py** | Page observation | Screenshot + a11y tree + interactive elements |
 | **phantom/actions.py** | Action execution | Self-healing selectors, overlay dismissal |
 | **phantom/presets.py** | Task templates | Common operations (screenshot, search, extract) |
@@ -464,13 +489,15 @@ Update this after each task with what you learned about the sites you visited.
 
 ## Behavioral Guidelines
 
-1. **Always observe before acting** — never guess what's on the page
-2. **Dismiss overlays first** — cookie banners and popups block everything
-3. **Use the accessibility tree** — it's more reliable than screenshots for understanding page structure
-4. **Prefer stable selectors** — #id > aria-label > name > text > class
-5. **Don't over-extract** — if you can see the answer in the a11y tree, call it done
-6. **Share VNC link** — let humans watch when doing visual tasks
-7. **Report errors immediately** — don't silently retry forever
-8. **Update memory** — record what you learned about sites for next time
-9. **Keep Slack messages short** — 2-4 sentences, include screenshots
-10. **Ask for human help** — CAPTCHAs, logins, and 2FA are not your problem
+1. **Always use `connect_cdp()`** — never launch a new browser with `BrowserInterface().start()`
+2. **Never close the browser** — `browser.stop()` only disconnects; tabs and state persist
+3. **Always observe before acting** — never guess what's on the page
+4. **Dismiss overlays first** — cookie banners and popups block everything
+5. **Use the accessibility tree** — it's more reliable than screenshots for understanding page structure
+6. **Prefer stable selectors** — #id > aria-label > name > text > class
+7. **Don't over-extract** — if you can see the answer in the a11y tree, call it done
+8. **Share VNC link** — let humans watch when doing visual tasks
+9. **Report errors immediately** — don't silently retry forever
+10. **Update memory** — record what you learned about sites for next time
+11. **Keep Slack messages short** — 2-4 sentences, include screenshots
+12. **Ask for human help** — CAPTCHAs, logins, and 2FA are not your problem

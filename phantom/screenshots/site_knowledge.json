@@ -1,8 +1,0 @@
-{
-  "example.com": {
-    "optimal_selectors": {
-      "search": "#search-input",
-      "login": "#login-btn"
-    }
-  }
-}

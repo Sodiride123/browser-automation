@@ -186,6 +186,7 @@ class BrowserInterface:
         self._user_data_dir = user_data_dir
         self._proxy = proxy
         self._persistent = False  # True when using launch_persistent_context
+        self._cdp = False  # True when connected via connect_cdp()
         self._playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -198,6 +199,71 @@ class BrowserInterface:
 
     def __exit__(self, *a):
         self.stop(); return False
+
+    @classmethod
+    def connect_cdp(cls, endpoint="http://localhost:9222", viewport_width=1280,
+                    viewport_height=720, timeout=30000, capture_console=True):
+        """Connect to an already-running Chromium via Chrome DevTools Protocol.
+
+        This is the preferred way to use the browser in Phantom tasks.
+        The browser process persists across tasks -- tabs, cookies, and state
+        are preserved between runs.
+
+        Args:
+            endpoint: CDP endpoint URL (default http://localhost:9222).
+            viewport_width/height: Viewport size for new pages.
+            timeout: Default timeout in ms.
+            capture_console: Capture console/network events.
+
+        Returns:
+            A BrowserInterface instance connected to the running browser.
+
+        Raises:
+            ConnectionError: If no browser is running on the endpoint.
+        """
+        import urllib.request
+        # Quick health check
+        try:
+            urllib.request.urlopen(f"{endpoint}/json/version", timeout=3)
+        except Exception as e:
+            raise ConnectionError(
+                f"No browser found at {endpoint}. "
+                f"Start one with: python phantom/browser_server.py start"
+            ) from e
+
+        inst = cls.__new__(cls)
+        inst._headless = False
+        inst._viewport = {"width": viewport_width, "height": viewport_height}
+        inst._timeout = timeout
+        inst._slow_mo = 0
+        inst._user_agent = None
+        inst._capture_console = capture_console
+        inst._user_data_dir = None
+        inst._proxy = None
+        inst._persistent = False
+        inst._cdp = True  # Flag: connected via CDP, don't kill browser on stop()
+        inst.devtools = DevTools()
+
+        inst._playwright = sync_playwright().start()
+        inst.browser = inst._playwright.chromium.connect_over_cdp(endpoint)
+
+        # Reuse existing context/page if available, else create new
+        contexts = inst.browser.contexts
+        if contexts:
+            inst.context = contexts[0]
+            if inst.context.pages:
+                inst.page = inst.context.pages[-1]
+            else:
+                inst.page = inst.context.new_page()
+        else:
+            inst.context = inst.browser.new_context(viewport=inst._viewport)
+            inst.context.set_default_timeout(timeout)
+            inst.page = inst.context.new_page()
+
+        if capture_console:
+            inst._attach_devtools_listeners()
+        inst._started = True
+        return inst
 
     def start(self):
         """Launch Chromium and create a page. Hooks up devtools listeners.
@@ -305,10 +371,15 @@ class BrowserInterface:
         """Close browser. Safe to call multiple times. DevTools data preserved.
 
         In persistent mode, closing the context saves profile data to disk.
+        In CDP mode, only disconnects — the browser process keeps running.
         """
         if not self._started: return
         try:
-            if self._persistent:
+            if getattr(self, '_cdp', False):
+                # CDP mode: just disconnect, don't kill the browser
+                # The browser process is managed by browser_server.py
+                pass
+            elif self._persistent:
                 # Persistent mode: context IS the browser, closing it saves state
                 if self.context: self.context.close()
             else:
