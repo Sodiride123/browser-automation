@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>VNC - Browser Automation</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #vnc-container {
+            width: 100%;
+            height: 100%;
+        }
+        #vnc-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        /* Overlay for status messages */
+        #status-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        }
+        #status-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: #4fc3f7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        #status-text {
+            font-size: 18px;
+            color: #b0b0b0;
+            text-align: center;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        #retry-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        #error-details {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #555;
+            max-width: 500px;
+            text-align: center;
+        }
+    </style>
+<script src="https://sites.super.betamyninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <div id="status-overlay">
+        <div class="spinner"></div>
+        <div id="status-text">Connecting to VNC...</div>
+        <div id="retry-info"></div>
+        <div id="error-details"></div>
+    </div>
+    <div id="vnc-container"></div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        // ============================================================
+        // Configuration
+        // ============================================================
+        const CONFIG = {
+            maxRetries: 5,              // Max connection attempts
+            initialRetryDelay: 1000,    // 1 second first retry
+            maxRetryDelay: 10000,       // 10 seconds max between retries
+            backoffMultiplier: 1.5,     // Exponential backoff
+            wsCheckTimeout: 5000,       // WebSocket health check timeout
+            vncHost: window.location.hostname,
+            vncPort: window.location.port || (window.location.protocol === 'https:' ? '443' : '80'),
+            vncPath: 'websockify',
+        };
+
+        // ============================================================
+        // State
+        // ============================================================
+        let retryCount = 0;
+        let retryDelay = CONFIG.initialRetryDelay;
+        let retryTimer = null;
+        let connected = false;
+
+        // ============================================================
+        // URL Parameter Parsing
+        // ============================================================
+        function getParam(name) {
+            // Check hash first (more private), then query string
+            const hashMatch = window.location.hash.match(new RegExp('[&#]' + name + '=([^&]*)'));
+            if (hashMatch) return decodeURIComponent(hashMatch[1]);
+
+            const queryMatch = window.location.search.match(new RegExp('[?&]' + name + '=([^&#]*)'));
+            if (queryMatch) return decodeURIComponent(queryMatch[1]);
+
+            // Also check combined href for edge cases
+            const hrefMatch = window.location.href.match(new RegExp('[?&#]' + name + '=([^&#]*)'));
+            if (hrefMatch) return decodeURIComponent(hrefMatch[1]);
+
+            return null;
+        }
+
+        const password = getParam('password');
+        const autoconnect = getParam('autoconnect') !== 'false'; // default true
+
+        // ============================================================
+        // UI Helpers
+        // ============================================================
+        const overlay = document.getElementById('status-overlay');
+        const statusText = document.getElementById('status-text');
+        const retryInfo = document.getElementById('retry-info');
+        const errorDetails = document.getElementById('error-details');
+
+        function showStatus(msg, retry, error) {
+            overlay.classList.remove('hidden');
+            statusText.textContent = msg;
+            retryInfo.textContent = retry || '';
+            errorDetails.textContent = error || '';
+        }
+
+        function hideStatus() {
+            overlay.classList.add('hidden');
+        }
+
+        // ============================================================
+        // WebSocket Pre-Check
+        // ============================================================
+        function checkWebSocket() {
+            return new Promise((resolve, reject) => {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${CONFIG.vncHost}:${CONFIG.vncPort}/${CONFIG.vncPath}`;
+
+                const ws = new WebSocket(wsUrl, ['binary']);
+                const timeout = setTimeout(() => {
+                    ws.close();
+                    reject(new Error('WebSocket connection timeout'));
+                }, CONFIG.wsCheckTimeout);
+
+                ws.onopen = () => {
+                    clearTimeout(timeout);
+                    ws.close();
+                    resolve(true);
+                };
+
+                ws.onerror = (err) => {
+                    clearTimeout(timeout);
+                    reject(new Error('WebSocket connection failed'));
+                };
+            });
+        }
+
+        // ============================================================
+        // VNC Connection via iframe
+        // ============================================================
+        function buildVncUrl() {
+            // Use the full-featured vnc.html with all our settings
+            const base = window.location.protocol + '//' + window.location.host + '/vnc.html';
+            const params = new URLSearchParams();
+
+            params.set('autoconnect', 'true');
+            params.set('reconnect', 'true');
+            params.set('reconnect_delay', '3000');
+            params.set('resize', 'scale');
+            params.set('quality', '6');
+            params.set('compression', '2');
+            params.set('show_dot', 'true');
+
+            if (password) {
+                params.set('password', password);
+            }
+
+            return base + '?' + params.toString();
+        }
+
+        function loadVnc() {
+            const container = document.getElementById('vnc-container');
+            // Remove any existing iframe
+            container.innerHTML = '';
+
+            const iframe = document.createElement('iframe');
+            iframe.src = buildVncUrl();
+            iframe.allow = 'clipboard-read; clipboard-write';
+
+            // Monitor iframe for connection status
+            iframe.onload = () => {
+                // Give noVNC a moment to establish the WebSocket connection
+                setTimeout(() => {
+                    try {
+                        // Try to detect if noVNC connected successfully
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        const statusEl = iframeDoc.querySelector('#noVNC_status');
+                        const connectPanel = iframeDoc.querySelector('#noVNC_connect_dlg');
+
+                        if (connectPanel && connectPanel.classList.contains('noVNC_open')) {
+                            // Connect panel is showing = connection failed
+                            console.log('[VNC Resilient] noVNC connect panel visible, connection may have failed');
+                            handleConnectionFailure('WebSocket handshake failed');
+                            return;
+                        }
+
+                        // Connection seems OK
+                        connected = true;
+                        retryCount = 0;
+                        retryDelay = CONFIG.initialRetryDelay;
+                        hideStatus();
+                        console.log('[VNC Resilient] Connected successfully');
+                    } catch (e) {
+                        // Cross-origin - can't check iframe content, assume OK
+                        connected = true;
+                        hideStatus();
+                        console.log('[VNC Resilient] iframe loaded (cross-origin, assuming OK)');
+                    }
+                }, 3000);
+            };
+
+            iframe.onerror = () => {
+                handleConnectionFailure('Failed to load VNC page');
+            };
+
+            container.appendChild(iframe);
+        }
+
+        // ============================================================
+        // Retry Logic
+        // ============================================================
+        function handleConnectionFailure(reason) {
+            connected = false;
+            retryCount++;
+
+            if (retryCount > CONFIG.maxRetries) {
+                showStatus(
+                    'Unable to establish VNC connection',
+                    `Failed after ${CONFIG.maxRetries} attempts`,
+                    'Try refreshing the page. If the problem persists, the VNC service may be down.'
+                );
+                return;
+            }
+
+            const delay = Math.min(retryDelay, CONFIG.maxRetryDelay);
+            showStatus(
+                'Connection interrupted, reconnecting...',
+                `Attempt ${retryCount}/${CONFIG.maxRetries} — retrying in ${Math.round(delay/1000)}s`,
+                reason || ''
+            );
+
+            console.log(`[VNC Resilient] Retry ${retryCount}/${CONFIG.maxRetries} in ${delay}ms: ${reason}`);
+
+            retryTimer = setTimeout(() => {
+                showStatus('Connecting to VNC...', `Attempt ${retryCount}/${CONFIG.maxRetries}`);
+                attemptConnection();
+            }, delay);
+
+            retryDelay = Math.min(retryDelay * CONFIG.backoffMultiplier, CONFIG.maxRetryDelay);
+        }
+
+        // ============================================================
+        // Connection Attempt with WebSocket Pre-Check
+        // ============================================================
+        async function attemptConnection() {
+            try {
+                showStatus('Checking WebSocket connectivity...');
+                await checkWebSocket();
+                console.log('[VNC Resilient] WebSocket pre-check passed');
+                showStatus('WebSocket OK, loading VNC...');
+                loadVnc();
+            } catch (err) {
+                console.log('[VNC Resilient] WebSocket pre-check failed:', err.message);
+                handleConnectionFailure(err.message);
+            }
+        }
+
+        // ============================================================
+        // Direct Connection (skip pre-check for first attempt)
+        // ============================================================
+        function startConnection() {
+            if (!autoconnect) {
+                hideStatus();
+                return;
+            }
+
+            showStatus('Connecting to VNC...');
+            // First attempt: go directly (faster)
+            loadVnc();
+        }
+
+        // ============================================================
+        // Visibility Change Handler — reconnect when tab becomes visible
+        // ============================================================
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !connected) {
+                console.log('[VNC Resilient] Tab became visible, attempting reconnect');
+                if (retryTimer) clearTimeout(retryTimer);
+                retryCount = 0;
+                retryDelay = CONFIG.initialRetryDelay;
+                attemptConnection();
+            }
+        });
+
+        // ============================================================
+        // Start
+        // ============================================================
+        startConnection();
+
+    })();
+    </script>
+</body>
+</html>

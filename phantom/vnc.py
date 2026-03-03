@@ -23,13 +23,15 @@ def get_vnc_url() -> str:
             meta = json.load(f)
         sandbox_id = meta["thread_id"]
         stage = meta["environment"]
-        base = f"https://6080-{sandbox_id}.app.super.{stage}myninja.ai"
+        # Route VNC through port 3222 (nginx /vnc/ location) because
+        # the platform proxy doesn't forward WebSocket traffic to port 6080
+        base = f"https://3222-{sandbox_id}.app.super.{stage}myninja.ai"
 
         password = _get_vnc_password()
         if password:
-            return f"{base}/vnc.html?autoconnect=true&password={password}"
+            return f"{base}/vnc/vnc.html?autoconnect=true&password={password}"
 
-        return f"{base}/vnc.html?autoconnect=true"
+        return f"{base}/vnc/vnc.html?autoconnect=true"
     except (FileNotFoundError, KeyError, json.JSONDecodeError):
         return "http://0.0.0.0:6080"
 

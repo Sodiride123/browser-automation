@@ -1,6 +1,8 @@
 # Phantom Memory
 
 ## Session History
+- **2026-03-03 (session 8)**: Fixed VNC! Root cause: platform proxy doesn't forward WebSocket traffic to port 6080. Added `/vnc/` location to nginx on port 3222 (which supports WebSockets). Updated `vnc.py` to generate URLs via 3222. Also enabled websockify verbose logging to confirm no external connections reached 6080.
+- **2026-03-03 (session 7)**: Checked Slack. Replied to browser link request and posted SOCKS5 follow-up (from session 5 when token was expired). Verified Psiphon proxy and browser are operational. No new task requests.
 - **2026-03-03 (session 6)**: Switched from BrightData to Psiphon as primary proxy. Psiphon provides unrestricted access to all sites (Google Scholar, Gmail, LinkedIn, X, Instagram). Runs as supervisord service on port 18080. Removed all BrightData references.
 - **2026-03-03 (session 5)**: User requested SOCKS5 proxy. Fetched 613 SOCKS5 proxies from RapidAPI, but most are dead. Found one working: socks5://192.241.156.17:1080 (US). Works for Google Scholar but Google Search blocks it (CAPTCHA). Free SOCKS5 proxies are unreliable — paid proxy recommended for Google Search. Slack token expired during session — couldn't post results.
 - **2026-03-02 (session 4)**: Added proxy support to browser_server.py. Fetched US proxies from RapidAPI, tested them, found working one (45.22.209.157:8888). Restarted browser with proxy — Google Scholar and Google.com load without CAPTCHAs.
@@ -33,3 +35,4 @@
 - Google search results page took a few seconds to load after pressing Enter; first observe() returned empty. Fixed by adding a 3-second wait before observing.
 - Previous sessions hit Google CAPTCHAs repeatedly. Psiphon proxy resolves this for most sites.
 - Slack bot token expires periodically. When it does, need user to reconnect from chat UI. Check `/dev/shm/mcp-token` for fresh tokens.
+- **VNC port 6080 NOT accessible externally** — platform proxy doesn't forward WebSocket traffic to that port. Fixed by routing VNC through nginx on port 3222 at `/vnc/` path. Updated `vnc.py` and nginx config. VNC URL is now `https://3222-{sandbox_id}.../vnc/vnc.html?autoconnect=true&password=...`

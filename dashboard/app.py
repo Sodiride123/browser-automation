@@ -440,4 +440,5 @@ if __name__ == '__main__':
     print(f"   Total tool uses: {s['total_tool_uses']}")
     print(f"   Total cost: ${s['total_cost']:.4f}")
 
-    app.run(host='0.0.0.0', port=9000, debug=False)
+    port = int(os.environ.get('DASHBOARD_PORT', 9000))
+    app.run(host='0.0.0.0', port=port, debug=False)
