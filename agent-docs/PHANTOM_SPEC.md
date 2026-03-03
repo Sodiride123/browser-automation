@@ -237,8 +237,8 @@ Share the live browser view with humans:
 ```python
 from phantom.vnc import get_vnc_url, share_vnc_link, request_human_help
 
-# Get the public noVNC URL
-url = get_vnc_url()  # https://6080-<sandbox_id>.app.super.<stage>myninja.ai
+# Get the public noVNC URL (uses resilient vnc_auto.html with auto-reconnect)
+url = get_vnc_url()  # https://6080-<sandbox_id>.app.super.<stage>myninja.ai/vnc_auto.html?password=...
 
 # Post VNC link to Slack
 share_vnc_link("Starting browser automation task")
@@ -421,8 +421,9 @@ python slack_interface.py upload phantom/screenshots/step_005.png --title "Curre
 
 **Starting a task:**
 ```bash
+# Use get_vnc_url() for the live browser link
 python slack_interface.py say "👻 Starting browser task: searching for AI news on Bing.
-🖥️ Watch live: 0.0.0.0:6080"
+🖥️ Watch live: $(python -c 'from phantom.vnc import get_vnc_url; print(get_vnc_url())')"
 ```
 
 **Task complete:**
@@ -433,9 +434,8 @@ python slack_interface.py say "👻 Done (8 steps). Found top 5 AI news results.
 
 **Need help:**
 ```bash
-python slack_interface.py say "👻 🚨 Hit a CAPTCHA on google.com/login
-🖥️ Please solve it: 0.0.0.0:6080
-⏳ Waiting for human..."
+# Or use the request_human_help() helper which includes the VNC link automatically
+python -c "from phantom.vnc import request_human_help; request_human_help('Hit a CAPTCHA on google.com/login', 'https://google.com/login')"
 ```
 
 ---

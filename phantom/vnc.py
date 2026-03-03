@@ -2,6 +2,11 @@
 VNC Integration — Human override via noVNC.
 
 Provides utilities for sharing the VNC link and waiting for human interaction.
+Uses the resilient VNC page (vnc_auto.html) which includes:
+  - Auto-reconnect with exponential backoff
+  - WebSocket pre-check before connecting
+  - Password auto-fill from URL params
+  - Tab visibility reconnect handler
 """
 
 import json
@@ -11,29 +16,55 @@ from pathlib import Path
 from typing import Optional
 
 
+# Port 6080: direct noVNC (websockify)
+# vnc_auto.html: resilient wrapper with retry logic
+VNC_PORT = 6080
+VNC_PAGE = "vnc_auto.html"
+
+
 def get_vnc_url() -> str:
     """
     Get the public noVNC URL for sharing the live browser view.
 
     Returns the auto-connect URL with password so the user can
     click and immediately see the browser — no password prompt.
+    Uses the resilient vnc_auto.html page for automatic reconnection.
     """
     try:
         with open("/dev/shm/sandbox_metadata.json") as f:
             meta = json.load(f)
         sandbox_id = meta["thread_id"]
         stage = meta["environment"]
-        # Route VNC through port 3222 (nginx /vnc/ location) because
-        # the platform proxy doesn't forward WebSocket traffic to port 6080
-        base = f"https://3222-{sandbox_id}.app.super.{stage}myninja.ai"
+        base = f"https://{VNC_PORT}-{sandbox_id}.app.super.{stage}myninja.ai"
 
         password = _get_vnc_password()
         if password:
-            return f"{base}/vnc/vnc.html?autoconnect=true&password={password}"
+            return f"{base}/{VNC_PAGE}?password={password}"
 
-        return f"{base}/vnc/vnc.html?autoconnect=true"
+        return f"{base}/{VNC_PAGE}"
     except (FileNotFoundError, KeyError, json.JSONDecodeError):
-        return "http://0.0.0.0:6080"
+        return f"http://0.0.0.0:{VNC_PORT}/{VNC_PAGE}"
+
+
+def get_vnc_url_classic() -> str:
+    """
+    Get the classic noVNC URL (vnc.html) without the resilient wrapper.
+    Use this as a fallback if vnc_auto.html has issues.
+    """
+    try:
+        with open("/dev/shm/sandbox_metadata.json") as f:
+            meta = json.load(f)
+        sandbox_id = meta["thread_id"]
+        stage = meta["environment"]
+        base = f"https://{VNC_PORT}-{sandbox_id}.app.super.{stage}myninja.ai"
+
+        password = _get_vnc_password()
+        if password:
+            return f"{base}/vnc.html?autoconnect=true&password={password}"
+
+        return f"{base}/vnc.html?autoconnect=true"
+    except (FileNotFoundError, KeyError, json.JSONDecodeError):
+        return f"http://0.0.0.0:{VNC_PORT}/vnc.html?autoconnect=true"
 
 
 def _get_vnc_password() -> Optional[str]:
