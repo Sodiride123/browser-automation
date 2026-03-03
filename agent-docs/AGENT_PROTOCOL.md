@@ -122,7 +122,7 @@ Starting now!"
 #### Share Live Browser View
 ```bash
 # Always share the VNC link so stakeholders can watch the browser live.
-# Use phantom/vnc.py to generate the auto-connect URL with password.
+# Use phantom/vnc.py to generate the auto-connect URL (no password needed).
 python slack_interface.py say "**🖥️ Live Browser View**
 
 Watch the browser automation in real-time:

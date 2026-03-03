@@ -280,7 +280,7 @@ def list_services() -> list[dict]:
 
 
 def get_vnc_url() -> str:
-    """Get the VNC URL for manual browser login."""
+    """Get the VNC URL for manual browser login (port 6081, no password)."""
     try:
         from phantom.vnc import get_vnc_url as _get_vnc_url
         return _get_vnc_url()
@@ -290,17 +290,9 @@ def get_vnc_url() -> str:
                 meta = json.load(f)
             sandbox_id = meta["thread_id"]
             stage = meta["environment"]
-            password = ""
-            try:
-                password = Path("/root/.vnc/password.txt").read_text().strip()
-            except FileNotFoundError:
-                pass
-            base = f"https://6080-{sandbox_id}.app.super.{stage}myninja.ai"
-            if password:
-                return f"{base}/vnc_auto.html?password={password}"
-            return f"{base}/vnc_auto.html"
+            return f"https://6081-{sandbox_id}.app.super.{stage}myninja.ai/vnc.html?autoconnect=true"
         except Exception:
-            return "http://0.0.0.0:6080/vnc_auto.html"
+            return "http://0.0.0.0:6081/vnc.html?autoconnect=true"
 
 
 def print_status(results: Optional[dict] = None, service: Optional[str] = None):

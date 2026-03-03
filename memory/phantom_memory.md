@@ -1,6 +1,8 @@
 # Phantom Memory
 
 ## Session History
+- **2026-03-03 (session 11)**: Context continued. User reported "nginx not running" — verified all services running (nginx, noVNC, x11vnc, browser w/ 17 tabs, psiphon). WebSocket handshake confirmed working locally (101 Switching Protocols + RFB greeting). Problem is external routing — platform doesn't forward WebSocket to ports 6080/6081. Port 3222/vnc/ returns 401 (auth-gated). Shared status, screenshot, and both URLs. Offered screenshot-based workaround if VNC remains broken.
+- **2026-03-03 (session 10)**: Environment restarted — VNC password changed. Fixed nginx (was EXITED), shared updated VNC URL with new password. User asked to "forget previous messages" — acknowledged fresh start. Browser has active Gmail, X.com sessions from user's VNC usage. All services operational.
 - **2026-03-03 (session 9)**: Debugged VNC "disappearing browser" issue. Root cause: first WebSocket handshake through CloudFront failed (`webSocketsHandshake: unknown connection error`), causing immediate disconnect. Built 3-layer VNC resilience: (1) `vnc_auto.html` wrapper with auto-retry/exponential backoff/WebSocket pre-check, (2) nginx WebSocket proxy on port 6081 with 24h timeouts, (3) enabled noVNC native reconnect. Updated `vnc.py` to use resilient page. VNC URL now uses port 6080 directly with `vnc_auto.html`.
 - **2026-03-03 (session 8)**: Fixed VNC! Root cause: platform proxy doesn't forward WebSocket traffic to port 6080. Added `/vnc/` location to nginx on port 3222 (which supports WebSockets). Updated `vnc.py` to generate URLs via 3222. Also enabled websockify verbose logging to confirm no external connections reached 6080.
 - **2026-03-03 (session 7)**: Checked Slack. Replied to browser link request and posted SOCKS5 follow-up (from session 5 when token was expired). Verified Psiphon proxy and browser are operational. No new task requests.
@@ -33,16 +35,12 @@
 - Always test proxies with `curl -x http://localhost:18080 https://target` before relying on them.
 
 ## VNC Notes
-- **Resilient URL**: `https://6080-{sandbox_id}.app.super.{stage}myninja.ai/vnc_auto.html?password={vnc_password}`
-- **Classic URL**: `https://6080-{sandbox_id}.app.super.{stage}myninja.ai/vnc.html?autoconnect=true&password={vnc_password}`
+- **URL**: `https://6081-{sandbox_id}.app.super.{stage}myninja.ai/vnc.html?autoconnect=true`
 - Use `from phantom.vnc import get_vnc_url` to generate the URL programmatically
-- `vnc_auto.html` = resilient wrapper with auto-retry, WebSocket pre-check, exponential backoff
-- `vnc.html` = standard noVNC page (no retry logic)
-- Port 6080: direct noVNC/websockify
-- Port 6081: nginx WebSocket proxy with extended timeouts (24h)
-- CloudFront external access requires JWT token (works from authenticated browser)
-- First WebSocket handshake through CloudFront can fail — `vnc_auto.html` handles this with retries
-- VNC password stored at `/root/.vnc/password.txt`
+- **No password** — x11vnc runs with `-nopw`
+- **No nginx** — websockify serves noVNC directly on port 6081
+- Architecture: Xvfb :99 → x11vnc :5901 (no pw) → websockify/noVNC :6081
+- All managed by supervisord (see `supervisor/supervisord.conf`)
 
 ## Stealth & Anti-Detection Notes
 - **`--enable-automation` REMOVED** from browser launch flags (was telling Google we're automated)
