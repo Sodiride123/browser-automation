@@ -27,8 +27,9 @@ from pathlib import Path
 CDP_PORT = 9222
 CDP_ENDPOINT = f"http://localhost:{CDP_PORT}"
 PID_FILE = Path(__file__).parent / ".browser_server.pid"
-PROXY_FILE = Path(__file__).parent / ".browser_proxy"
 BROWSER_DATA_DIR = Path(__file__).parent / "browser_data"
+# Psiphon tunnel core runs a local HTTP proxy on this port
+PSIPHON_PROXY = "http://127.0.0.1:18080"
 DISPLAY = os.environ.get("DISPLAY", ":99")
 
 # Find Chromium binary
@@ -180,10 +181,8 @@ def start(foreground=False):
     chromium = _find_chromium()
     BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Read proxy config if set
-    proxy_server = None
-    if PROXY_FILE.exists():
-        proxy_server = PROXY_FILE.read_text().strip()
+    # Psiphon proxy (always enabled)
+    proxy_server = PSIPHON_PROXY
 
     args = [
         chromium,
@@ -294,20 +293,9 @@ def main():
         status()
     elif cmd == "ensure":
         ensure_running()
-    elif cmd == "set-proxy":
-        if len(sys.argv) < 3:
-            print("Usage: set-proxy <host:port> | set-proxy off")
-            sys.exit(1)
-        proxy_val = sys.argv[2]
-        if proxy_val.lower() == "off":
-            PROXY_FILE.unlink(missing_ok=True)
-            print("✅ Proxy disabled. Restart browser to apply.")
-        else:
-            PROXY_FILE.write_text(proxy_val)
-            print(f"✅ Proxy set to {proxy_val}. Restart browser to apply.")
     else:
         print(f"Unknown command: {cmd}")
-        print("Usage: start | stop | restart | status | ensure | set-proxy")
+        print("Usage: start | stop | restart | status | ensure")
         sys.exit(1)
 
 
