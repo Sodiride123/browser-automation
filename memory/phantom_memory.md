@@ -1,6 +1,8 @@
 # Phantom Memory
 
 ## Session History
+- **2026-03-03 (session 15)**: User requested HN karma building on every session wakeup. Checked HN — NOT logged in (session cookie missing after env restart). Informed user they need to log in via VNC first. Slack token expired mid-session — refreshed from /dev/shm/mcp-token (MCP had rotated at 13:24). Standing task: post quality comments on HN trending stories each session.
+- **2026-03-03 (session 14)**: User requested email to babak@ninjatech.ai with self-introduction + Twitter screenshot as evidence. Took screenshot of X.com/home tab, opened Gmail compose via URL params (to, subject, body pre-filled), attached screenshot via hidden file input, clicked Send button via aria-label selector. Gmail confirmed "Message sent". Uploaded 3 screenshots to Slack (Twitter tab, compose view, sent confirmation). Sent from sadrieh@gmail.com.
 - **2026-03-03 (session 13)**: Major architecture cleanup. (1) Created `supervisor/supervisord.conf` — single source of truth for all services. (2) VNC: port 6081, no password, no nginx, websockify direct. (3) Patched `/app/browser_api.py` to connect via CDP to browser_server instead of launching standalone Playwright browser — eliminates rogue browser instances. (4) Fixed psiphon (port conflict from old config). (5) All browser instances now use `browser_data/` profile with psiphon proxy and stealth flags. (6) Generalized `gmail_health.py` → `session_health.py` (6 services).
 - **2026-03-03 (session 12)**: VNC architecture refactored: port 6081, no password, no nginx, websockify direct.
 - **2026-03-03 (session 11)**: User reported "nginx not running" — verified all services running. Sent screenshot + status. VNC architecture was subsequently refactored to simplify (port 6081 direct, no password, no nginx proxy).
@@ -21,10 +23,19 @@
 - **Gmail**: Works through Psiphon proxy.
 - **LinkedIn**: Works through Psiphon proxy.
 - **NinjaTech AI LinkedIn**: linkedin.com/company/ninjatech-ai (company page)
+- **Hacker News**: news.ycombinator.com — login check: `#me` element or `a[href*="user?id="]` in `.pagetop`. If nav shows "login" → not logged in. Cookies needed: `user` cookie on news.ycombinator.com.
+
+## Standing Tasks (run every session wakeup)
+- **HN Karma**: Post thoughtful comments on trending HN stories to build user's karma. Requires active HN login session.
 
 ## Selector Notes
 - Google search box: `#APjFqb` (textarea)
 - Google search results links: `#search a` for extracting links
+- **Gmail compose**: Use URL `mail.google.com/mail/u/0/?view=cm&fs=1&to=EMAIL&su=SUBJECT&body=BODY` to pre-fill compose
+- **Gmail Send button**: `[aria-label="Send ‪(Ctrl-Enter)‬"]` or class `.T-I.J-J5-Ji.aoO.v7.T-I-atl.L3`
+- **Gmail file attach**: `input[type="file"]` hidden element — use `set_input_files()` to attach
+- **Gmail observer returns 0 elements** — Gmail uses complex DOM; use direct selectors or JS evaluate instead
+- **Gmail logged in as**: sadrieh@gmail.com
 
 ## Proxy Notes
 - **Current proxy**: Psiphon tunnel core — local HTTP proxy on `localhost:18080`, SOCKS on `localhost:18081`
