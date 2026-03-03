@@ -2,6 +2,7 @@
 .slack_interface.json
 slack_interface.json
 *.config.json
+!phantom/psiphon.config.json
 s3_config.json
 .claude.json
 
@@ -82,3 +83,6 @@ phantom/screenshots/
 
 # Ad-hoc task scripts
 phantom_task.py
+phantom/psiphon-tunnel-core
+phantom/psiphon_data/
+phantom/remote_server_list*
