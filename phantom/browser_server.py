@@ -27,6 +27,7 @@ from pathlib import Path
 CDP_PORT = 9222
 CDP_ENDPOINT = f"http://localhost:{CDP_PORT}"
 PID_FILE = Path(__file__).parent / ".browser_server.pid"
+PROXY_FILE = Path(__file__).parent / ".browser_proxy"
 BROWSER_DATA_DIR = Path(__file__).parent / "browser_data"
 DISPLAY = os.environ.get("DISPLAY", ":99")
 
@@ -145,7 +146,31 @@ def start(foreground=False):
     if _is_running():
         print(f"✅ Browser server already running at {CDP_ENDPOINT}")
         status()
-        return
+        if foreground:
+            # In foreground mode, wait on the existing process so supervisord
+            # doesn't think we crashed
+            existing_pid = _get_pid()
+            if existing_pid:
+                import signal as _sig
+                print(f"   Monitoring existing PID {existing_pid}...")
+                def _on_term(s, f):
+                    stop()
+                    sys.exit(0)
+                _sig.signal(_sig.SIGTERM, _on_term)
+                _sig.signal(_sig.SIGINT, _on_term)
+                # Poll until the process dies
+                while True:
+                    try:
+                        os.kill(existing_pid, 0)
+                        time.sleep(5)
+                    except OSError:
+                        print("⚠️  Browser process died, restarting...")
+                        break
+                # Process died — fall through to restart
+            else:
+                return
+        else:
+            return
 
     # Kill any stale process
     old_pid = _get_pid()
@@ -154,6 +179,11 @@ def start(foreground=False):
 
     chromium = _find_chromium()
     BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Read proxy config if set
+    proxy_server = None
+    if PROXY_FILE.exists():
+        proxy_server = PROXY_FILE.read_text().strip()
 
     args = [
         chromium,
@@ -187,9 +217,15 @@ def start(foreground=False):
         "--use-mock-keychain",
         "--enable-automation",
         "--enable-unsafe-swiftshader",
+        "--ignore-certificate-errors",
         # Start with a blank tab
         "about:blank",
     ]
+
+    # Add proxy if configured
+    if proxy_server:
+        args.insert(-1, f"--proxy-server={proxy_server}")
+        print(f"   Proxy: {proxy_server}")
 
     env = os.environ.copy()
     env["DISPLAY"] = DISPLAY
@@ -258,9 +294,20 @@ def main():
         status()
     elif cmd == "ensure":
         ensure_running()
+    elif cmd == "set-proxy":
+        if len(sys.argv) < 3:
+            print("Usage: set-proxy <host:port> | set-proxy off")
+            sys.exit(1)
+        proxy_val = sys.argv[2]
+        if proxy_val.lower() == "off":
+            PROXY_FILE.unlink(missing_ok=True)
+            print("✅ Proxy disabled. Restart browser to apply.")
+        else:
+            PROXY_FILE.write_text(proxy_val)
+            print(f"✅ Proxy set to {proxy_val}. Restart browser to apply.")
     else:
         print(f"Unknown command: {cmd}")
-        print("Usage: start | stop | restart | status | ensure")
+        print("Usage: start | stop | restart | status | ensure | set-proxy")
         sys.exit(1)
 
 

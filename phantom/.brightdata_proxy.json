@@ -1,0 +1,8 @@
+{
+  "upstream_host": "brd.superproxy.io",
+  "upstream_port": 33335,
+  "username": "brd-customer-hl_d1aa32d8-zone-residential_proxy1",
+  "password": "rr13cecunv81",
+  "local_port": 18080,
+  "country": ""
+}
