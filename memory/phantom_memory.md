@@ -44,6 +44,23 @@
 - First WebSocket handshake through CloudFront can fail — `vnc_auto.html` handles this with retries
 - VNC password stored at `/root/.vnc/password.txt`
 
+## Stealth & Anti-Detection Notes
+- **`--enable-automation` REMOVED** from browser launch flags (was telling Google we're automated)
+- **`--disable-blink-features=AutomationControlled` ADDED** — hides `navigator.webdriver`
+- Stealth JS patches auto-applied on browser start via `_apply_stealth_on_start()` in `browser_server.py`
+- Patches: navigator.webdriver, chrome.runtime, plugins, languages, WebGL, CDP artifacts
+- Use `python phantom/stealth.py check` to verify stealth is active
+- Use `python phantom/stealth.py apply` to re-apply if needed (e.g., after new tab)
+- Node.js `ws` module required (installed globally, needs `NODE_PATH=/usr/lib/node_modules`)
+
+## Gmail Login Notes
+- Gmail login requires manual VNC login (Google blocks automated logins)
+- Cookies persist in `browser_data/` — session lasts 2-4 weeks
+- Use `python phantom/gmail_health.py check` to verify session
+- Use `python phantom/gmail_health.py login-url` to get VNC URL for manual login
+- Psiphon datacenter IPs may trigger extra Google security — consider disabling proxy for Gmail login
+- 2FA accounts always require human interaction regardless of stealth
+
 ## Issues Encountered
 - Google search results page took a few seconds to load after pressing Enter; first observe() returned empty. Fixed by adding a 3-second wait before observing.
 - Previous sessions hit Google CAPTCHAs repeatedly. Psiphon proxy resolves this for most sites.
