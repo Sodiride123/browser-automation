@@ -238,7 +238,7 @@ Share the live browser view with humans:
 from phantom.vnc import get_vnc_url, share_vnc_link, request_human_help
 
 # Get the public noVNC URL (port 6081, no password, auto-connect)
-url = get_vnc_url()  # https://6081-<sandbox_id>.app.super.<stage>myninja.ai/vnc.html?autoconnect=true
+url = get_vnc_url()  # https://6080-<sandbox_id>.app.super.<stage>myninja.ai/vnc.html?autoconnect=true
 
 # Post VNC link to Slack
 share_vnc_link("Starting browser automation task")
@@ -383,7 +383,7 @@ ensure_running()  # Starts browser if not already running
 
 ## VNC: Live Browser Sharing
 
-The browser runs on a virtual display visible via VNC at port 6081 (no password, no nginx). Share the link when:
+The browser runs on a virtual display visible via VNC at port 6080 (no password, no nginx). Share the link when:
 - Starting a task (so humans can watch)
 - Hitting a blocker (CAPTCHA, login)
 - Demonstrating results

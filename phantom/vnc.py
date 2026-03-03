@@ -2,7 +2,7 @@
 VNC Integration — Human override via noVNC.
 
 Provides utilities for sharing the VNC link and waiting for human interaction.
-noVNC runs on port 6081 via supervisord (websockify → x11vnc, no password, no nginx).
+noVNC runs on port 6080 via supervisord (websockify → x11vnc, no password, no nginx).
 """
 
 import json
@@ -10,8 +10,8 @@ import subprocess
 from pathlib import Path
 
 
-# Port 6081: direct noVNC (websockify → x11vnc, no password)
-VNC_PORT = 6081
+# Port 6080: direct noVNC (websockify → x11vnc, no password)
+VNC_PORT = 6080
 
 
 def get_vnc_url() -> str:

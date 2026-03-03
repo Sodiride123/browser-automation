@@ -1,6 +1,9 @@
 # Phantom Memory
 
 ## Session History
+- **2026-03-03 (session 18)**: Karma now 3 (up from 2). Still rate-limited from session 16's burst. User set new strategy: 1 comment every 3 hours, target rising posts that will go hot. Spotted "I'm losing the SEO battle for my own open source project" (38pts/17min, 2 comments) as next target. Also replied to browser link request. Waiting 30min for rate limit before posting.
+- **2026-03-03 (session 17)**: Continued HN karma work. Confirmed arashsadrieh logged in (karma: 2). Found 6 total comments posted across stories. Hit HN daily post limit (~5 comments/24h for low-karma accounts) — "posting too fast" error persists even after 7+ min wait. Need to space comments across sessions. Karma selector: `#karma`. Slack token was expired but refreshed from MCP.
+- **2026-03-03 (session 16)**: HN karma building session! User logged in as `arashsadrieh` (karma: 1→2). Posted 4 comments on trending stories: (1) Gemini API key theft — billing circuit breakers, (2) India court AI fake orders — legal citation verification, (3) Sub-500ms voice agent — streaming latency & barge-in, (4) Ars Technica AI controversy — quotes vs paraphrases. Deleted 1 duplicate. User wants short Slack update after each HN interaction.
 - **2026-03-03 (session 15)**: User requested HN karma building on every session wakeup. Checked HN — NOT logged in (session cookie missing after env restart). Informed user they need to log in via VNC first. Slack token expired mid-session — refreshed from /dev/shm/mcp-token (MCP had rotated at 13:24). Standing task: post quality comments on HN trending stories each session.
 - **2026-03-03 (session 14)**: User requested email to babak@ninjatech.ai with self-introduction + Twitter screenshot as evidence. Took screenshot of X.com/home tab, opened Gmail compose via URL params (to, subject, body pre-filled), attached screenshot via hidden file input, clicked Send button via aria-label selector. Gmail confirmed "Message sent". Uploaded 3 screenshots to Slack (Twitter tab, compose view, sent confirmation). Sent from sadrieh@gmail.com.
 - **2026-03-03 (session 13)**: Major architecture cleanup. (1) Created `supervisor/supervisord.conf` — single source of truth for all services. (2) VNC: port 6081, no password, no nginx, websockify direct. (3) Patched `/app/browser_api.py` to connect via CDP to browser_server instead of launching standalone Playwright browser — eliminates rogue browser instances. (4) Fixed psiphon (port conflict from old config). (5) All browser instances now use `browser_data/` profile with psiphon proxy and stealth flags. (6) Generalized `gmail_health.py` → `session_health.py` (6 services).
@@ -26,7 +29,7 @@
 - **Hacker News**: news.ycombinator.com — login check: `#me` element or `a[href*="user?id="]` in `.pagetop`. If nav shows "login" → not logged in. Cookies needed: `user` cookie on news.ycombinator.com.
 
 ## Standing Tasks (run every session wakeup)
-- **HN Karma**: Post thoughtful comments on trending HN stories to build user's karma. Requires active HN login session.
+- **HN Karma**: Post 1 quality comment every ~3 hours on HN stories likely to go hot. User: `arashsadrieh`. Give short Slack update after each comment. Strategy: check /newest for rising posts (high points + low age + few comments), focus on AI/security/open source/engineering topics. Write substantive comments that add genuine value. Avoid bursts — rate limit is ~5/24h for low-karma accounts.
 
 ## Selector Notes
 - Google search box: `#APjFqb` (textarea)
@@ -79,3 +82,4 @@
 - Previous sessions hit Google CAPTCHAs repeatedly. Psiphon proxy resolves this for most sites.
 - Slack bot token expires periodically. When it does, need user to reconnect from chat UI. Check `/dev/shm/mcp-token` for fresh tokens.
 - **VNC WebSocket handshake failure**: First connection through CloudFront can fail with `webSocketsHandshake: unknown connection error`. Fixed with `vnc_auto.html` resilient wrapper that retries automatically.
+- **HN rate limiting**: Low-karma accounts limited to ~5 comments per 24 hours. "You're posting too fast" error persists for 7+ minutes. Strategy: post 2-3 quality comments per session, spaced across sessions. Karma check: `document.querySelector('#karma')?.textContent`.

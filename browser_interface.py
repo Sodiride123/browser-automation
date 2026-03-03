@@ -19,7 +19,7 @@ CLI:
     python browser_interface.py pdf out.pdf --url "https://example.com"
 
 VNC (human takeover):
-    Headed browsers display on Xvfb :99 → x11vnc :5901 → noVNC :6081
+    Headed browsers display on Xvfb :99 → x11vnc :5901 → noVNC :6080
 """
 
 import argparse, json, os, sys, time

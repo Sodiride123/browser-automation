@@ -290,9 +290,9 @@ def get_vnc_url() -> str:
                 meta = json.load(f)
             sandbox_id = meta["thread_id"]
             stage = meta["environment"]
-            return f"https://6081-{sandbox_id}.app.super.{stage}myninja.ai/vnc.html?autoconnect=true"
+            return f"https://6080-{sandbox_id}.app.super.{stage}myninja.ai/vnc.html?autoconnect=true"
         except Exception:
-            return "http://0.0.0.0:6081/vnc.html?autoconnect=true"
+            return "http://0.0.0.0:6080/vnc.html?autoconnect=true"
 
 
 def print_status(results: Optional[dict] = None, service: Optional[str] = None):
