@@ -19,10 +19,6 @@ echo "▶ Installing Playwright browsers..."
 python -m playwright install chromium 2>/dev/null || true
 echo "  ✓ Playwright browsers installed"
 
-# --- 2b. Node.js WebSocket module (for stealth injection) -------------------
-echo "▶ Installing Node.js ws module..."
-npm install -g ws 2>/dev/null || true
-echo "  ✓ Node.js ws module installed"
 
 # --- 3. Psiphon tunnel core (proxy) ----------------------------------------
 PSIPHON_BIN="$PHANTOM_DIR/psiphon-tunnel-core"

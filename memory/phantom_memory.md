@@ -47,17 +47,17 @@
 ## Stealth & Anti-Detection Notes
 - **`--enable-automation` REMOVED** from browser launch flags (was telling Google we're automated)
 - **`--disable-blink-features=AutomationControlled` ADDED** — hides `navigator.webdriver`
-- Stealth JS patches auto-applied on browser start via `_apply_stealth_on_start()` in `browser_server.py`
+- Stealth auto-applied via `context.add_init_script()` in `BrowserInterface.connect_cdp()` and `start()`
+- Every page load and new tab gets stealth automatically — no manual re-application needed
 - Patches: navigator.webdriver, chrome.runtime, plugins, languages, WebGL, CDP artifacts
-- Use `python phantom/stealth.py check` to verify stealth is active
-- Use `python phantom/stealth.py apply` to re-apply if needed (e.g., after new tab)
-- Node.js `ws` module required (installed globally, needs `NODE_PATH=/usr/lib/node_modules`)
+- Use `browser.check_stealth()` or `python phantom/stealth.py check` to verify
+- No Node.js dependency — pure Playwright integration
 
 ## Gmail Login Notes
 - Gmail login requires manual VNC login (Google blocks automated logins)
 - Cookies persist in `browser_data/` — session lasts 2-4 weeks
-- Use `python phantom/gmail_health.py check` to verify session
-- Use `python phantom/gmail_health.py login-url` to get VNC URL for manual login
+- Use `browser.check_gmail()` or `python phantom/gmail_health.py check` to verify session
+- Use `browser.gmail_login_url()` or `python phantom/gmail_health.py login-url` to get VNC URL
 - Psiphon datacenter IPs may trigger extra Google security — consider disabling proxy for Gmail login
 - 2FA accounts always require human interaction regardless of stealth
 

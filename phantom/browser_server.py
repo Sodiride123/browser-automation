@@ -254,23 +254,11 @@ def start(foreground=False):
         for i in range(30):
             if _is_running():
                 print(f"✅ Browser server ready at {CDP_ENDPOINT}")
-                _apply_stealth_on_start()
                 return
             time.sleep(0.5)
 
         print("⚠️  Browser started but CDP not responding yet. Check with: "
               f"python {__file__} status")
-
-
-def _apply_stealth_on_start():
-    """Apply stealth patches after browser starts."""
-    try:
-        from phantom.stealth import apply_stealth_to_all_pages
-        print("   Applying stealth patches...")
-        count = apply_stealth_to_all_pages()
-        print(f"   Stealth: patched {count} page(s)")
-    except Exception as e:
-        print(f"   Stealth patches skipped: {e}")
 
 
 def ensure_running():

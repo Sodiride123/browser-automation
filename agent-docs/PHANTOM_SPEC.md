@@ -440,24 +440,22 @@ python -c "from phantom.vnc import request_human_help; request_human_help('Hit a
 
 #### 7. Stealth (`phantom/stealth.py`)
 
-Anti-bot detection evasion. Applied automatically on browser start.
+Anti-bot detection evasion. **Applied automatically** on every `connect_cdp()`, `start()`, and `new_tab()` — no manual setup needed.
 
 ```python
-from phantom.stealth import apply_stealth_to_all_pages, check_stealth
+from browser_interface import BrowserInterface
 
-# Apply stealth patches to all open pages (done automatically on browser start)
-count = apply_stealth_to_all_pages()
+# Stealth is auto-applied when connecting:
+browser = BrowserInterface.connect_cdp()  # stealth already active!
 
-# Check if stealth is active on current page
-result = check_stealth()
+# Check stealth status:
+result = browser.check_stealth()
 # Returns: {"webdriverType": "undefined", "chromeRuntime": true, "plugins": 3, ...}
 ```
 
 **CLI:**
 ```bash
-python phantom/stealth.py apply   # Apply to all pages
 python phantom/stealth.py check   # Verify stealth is active
-python phantom/stealth.py status  # List open browser targets
 ```
 
 **What it patches:**
@@ -470,23 +468,27 @@ python phantom/stealth.py status  # List open browser targets
 
 #### 8. Gmail Health (`phantom/gmail_health.py`)
 
-Monitor Gmail session status and detect when re-login is needed.
+Monitor Gmail session status and detect when re-login is needed. **Accessible directly from BrowserInterface.**
 
 ```python
-from phantom.gmail_health import check_cookies, verify_gmail_session, get_login_url
+from browser_interface import BrowserInterface
+
+browser = BrowserInterface.connect_cdp()
 
 # Quick check: inspect cookies (no navigation)
-result = check_cookies()
+result = browser.check_gmail()
 # result["valid"] → True/False
 # result["cookies_found"] → ["SID", "HSID", ...]
+# result["login_url"] → VNC URL for manual login
 
-# Full check: navigate to Gmail and verify access
+# Get VNC URL for manual login
+url = browser.gmail_login_url()
+
+# Full check via module directly:
+from phantom.gmail_health import verify_gmail_session
 result = verify_gmail_session()
 # result["logged_in"] → True/False
 # result["email"] → "user@gmail.com" or None
-
-# Get VNC URL for manual login
-url = get_login_url()
 ```
 
 **CLI:**
@@ -520,7 +522,7 @@ python phantom/gmail_health.py json        # Machine-readable output
 | `phantom/actions.py` | Action execution with self-healing selectors |
 | `phantom/presets.py` | Pre-built task templates |
 | `phantom/vnc.py` | VNC URL generation and human help requests |
-| `phantom/stealth.py` | Anti-bot stealth patches (auto-applied on browser start) |
+| `phantom/stealth.py` | Anti-bot stealth JS + check (auto-applied via BrowserInterface) |
 | `phantom/gmail_health.py` | Gmail session health checker and monitor |
 | `browser_interface.py` | Low-level Playwright browser wrapper (connect_cdp / start) |
 | `memory/phantom_memory.md` | Your persistent memory file |

@@ -27,6 +27,19 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, field, asdict
 
+# Stealth: anti-bot detection evasion (applied automatically)
+_stealth_js = None
+def _get_stealth_js():
+    """Lazy-load stealth JS to avoid circular imports."""
+    global _stealth_js
+    if _stealth_js is None:
+        try:
+            from phantom.stealth import STEALTH_JS
+            _stealth_js = STEALTH_JS
+        except ImportError:
+            _stealth_js = ""
+    return _stealth_js
+
 if not os.environ.get("DISPLAY"):
     os.environ["DISPLAY"] = ":99"
 
@@ -262,6 +275,7 @@ class BrowserInterface:
 
         if capture_console:
             inst._attach_devtools_listeners()
+        inst._apply_stealth()
         inst._started = True
         return inst
 
@@ -319,7 +333,50 @@ class BrowserInterface:
         self.devtools = DevTools()
         if self._capture_console:
             self._attach_devtools_listeners()
+        self._apply_stealth()
         self._started = True
+
+    def _apply_stealth(self):
+        """Inject stealth anti-detection patches into the browser context.
+
+        Uses context.add_init_script() so patches run automatically on every
+        page load and new tab — no need to re-apply manually.
+        """
+        js = _get_stealth_js()
+        if not js:
+            return
+        try:
+            self.context.add_init_script(js)
+            # Also apply to current page immediately
+            try:
+                self.page.evaluate(js)
+            except Exception:
+                pass  # Page might not be ready yet
+        except Exception:
+            pass  # Non-fatal: stealth is best-effort
+
+    def check_stealth(self) -> dict:
+        """Check if stealth patches are active on the current page.
+
+        Returns dict with: webdriver, webdriverType, chromeRuntime, plugins, languages.
+        """
+        from phantom.stealth import check_stealth
+        return check_stealth(self)
+
+    def check_gmail(self) -> dict:
+        """Quick check: are Gmail session cookies present in the browser profile?
+
+        Returns dict with: valid (bool), cookies_found (list), login_url (str).
+        """
+        from phantom.gmail_health import check_cookies, get_login_url
+        result = check_cookies()
+        result["login_url"] = get_login_url()
+        return result
+
+    def gmail_login_url(self) -> str:
+        """Get the VNC URL for manual Gmail login."""
+        from phantom.gmail_health import get_login_url
+        return get_login_url()
 
     def _attach_devtools_listeners(self):
         """Attach console, error, and network listeners to current page."""
@@ -584,11 +641,18 @@ class BrowserInterface:
     # --- Tabs ---
 
     def new_tab(self, url=None):
-        """Open new tab, optionally navigate to URL. Attaches devtools listeners."""
+        """Open new tab, optionally navigate to URL. Attaches devtools listeners + stealth."""
         self._ok()
         self.page = self.context.new_page()
         if self._capture_console:
             self._attach_devtools_listeners()
+        # Stealth init_script runs automatically via context, but apply to current doc too
+        js = _get_stealth_js()
+        if js:
+            try:
+                self.page.evaluate(js)
+            except Exception:
+                pass
         if url: self.page.goto(url)
 
     def close_tab(self):
