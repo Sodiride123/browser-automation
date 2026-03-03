@@ -363,20 +363,30 @@ class BrowserInterface:
         from phantom.stealth import check_stealth
         return check_stealth(self)
 
-    def check_gmail(self) -> dict:
-        """Quick check: are Gmail session cookies present in the browser profile?
+    def check_session(self, service: str = "google") -> dict:
+        """Check if browser has valid session cookies for a service.
 
-        Returns dict with: valid (bool), cookies_found (list), login_url (str).
+        Args:
+            service: Service name — "google", "linkedin", "twitter",
+                     "github", "amazon", "facebook".
+
+        Returns dict with: valid (bool), cookies_found (list), login_url (str), etc.
         """
-        from phantom.gmail_health import check_cookies, get_login_url
-        result = check_cookies()
-        result["login_url"] = get_login_url()
-        return result
+        from phantom.session_health import check_session
+        return check_session(service)
 
-    def gmail_login_url(self) -> str:
-        """Get the VNC URL for manual Gmail login."""
-        from phantom.gmail_health import get_login_url
-        return get_login_url()
+    def session_status(self) -> dict:
+        """Check session health for all configured services.
+
+        Returns dict mapping service name → check result.
+        """
+        from phantom.session_health import check_all_sessions
+        return check_all_sessions()
+
+    def vnc_url(self) -> str:
+        """Get the VNC URL for manual browser login."""
+        from phantom.session_health import get_vnc_url
+        return get_vnc_url()
 
     def _attach_devtools_listeners(self):
         """Attach console, error, and network listeners to current page."""

@@ -53,12 +53,14 @@
 - Use `browser.check_stealth()` or `python phantom/stealth.py check` to verify
 - No Node.js dependency — pure Playwright integration
 
-## Gmail Login Notes
-- Gmail login requires manual VNC login (Google blocks automated logins)
-- Cookies persist in `browser_data/` — session lasts 2-4 weeks
-- Use `browser.check_gmail()` or `python phantom/gmail_health.py check` to verify session
-- Use `browser.gmail_login_url()` or `python phantom/gmail_health.py login-url` to get VNC URL
-- Psiphon datacenter IPs may trigger extra Google security — consider disabling proxy for Gmail login
+## Session Health Notes
+- All service logins require manual VNC login (stealth helps but can't bypass 2FA/CAPTCHA)
+- Cookies persist in `browser_data/` — sessions last 2-4 weeks typically
+- Use `browser.check_session("google")` or `python phantom/session_health.py check google`
+- Use `browser.session_status()` to check all services at once
+- Use `browser.vnc_url()` or `python phantom/session_health.py login-url` for VNC URL
+- Supported: google, linkedin, twitter, github, amazon, facebook
+- Psiphon datacenter IPs may trigger extra security on some services
 - 2FA accounts always require human interaction regardless of stealth
 
 ## Issues Encountered

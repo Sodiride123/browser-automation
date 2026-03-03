@@ -466,45 +466,50 @@ python phantom/stealth.py check   # Verify stealth is active
 - WebGL vendor/renderer → realistic NVIDIA values
 - Removes CDP/ChromeDriver artifacts
 
-#### 8. Gmail Health (`phantom/gmail_health.py`)
+#### 8. Session Health (`phantom/session_health.py`)
 
-Monitor Gmail session status and detect when re-login is needed. **Accessible directly from BrowserInterface.**
+Monitor browser login sessions for **any** service. **Accessible directly from BrowserInterface.**
+
+Supported services: `google`, `linkedin`, `twitter`, `github`, `amazon`, `facebook`.
 
 ```python
 from browser_interface import BrowserInterface
 
 browser = BrowserInterface.connect_cdp()
 
-# Quick check: inspect cookies (no navigation)
-result = browser.check_gmail()
+# Check a specific service
+result = browser.check_session("google")
 # result["valid"] → True/False
 # result["cookies_found"] → ["SID", "HSID", ...]
-# result["login_url"] → VNC URL for manual login
+
+result = browser.check_session("linkedin")
+result = browser.check_session("twitter")
+
+# Check all services at once
+all_results = browser.session_status()
+# {"google": {...}, "linkedin": {...}, "twitter": {...}, ...}
 
 # Get VNC URL for manual login
-url = browser.gmail_login_url()
-
-# Full check via module directly:
-from phantom.gmail_health import verify_gmail_session
-result = verify_gmail_session()
-# result["logged_in"] → True/False
-# result["email"] → "user@gmail.com" or None
+url = browser.vnc_url()
 ```
 
 **CLI:**
 ```bash
-python phantom/gmail_health.py check       # Quick cookie check
-python phantom/gmail_health.py verify      # Full verification (navigates to Gmail)
-python phantom/gmail_health.py monitor 30  # Continuous monitoring every 30 min
-python phantom/gmail_health.py login-url   # Print VNC URL for manual login
-python phantom/gmail_health.py json        # Machine-readable output
+python phantom/session_health.py status              # All services
+python phantom/session_health.py check google        # Specific service
+python phantom/session_health.py check linkedin      # Specific service
+python phantom/session_health.py services            # List available services
+python phantom/session_health.py login-url           # VNC URL for manual login
+python phantom/session_health.py monitor 30          # Continuous monitoring
+python phantom/session_health.py json                # Machine-readable (all)
+python phantom/session_health.py json google         # Machine-readable (one)
 ```
 
-**Gmail Login Flow:**
-1. Run `python phantom/gmail_health.py check` to see if session exists
-2. If not logged in, get VNC URL: `python phantom/gmail_health.py login-url`
-3. User opens VNC, navigates to gmail.com, logs in manually
-4. Cookies persist in `browser_data/` — session lasts 2-4 weeks
+**Login Flow (any service):**
+1. Run `python phantom/session_health.py status` to see which services need login
+2. Open VNC: `python phantom/session_health.py login-url`
+3. Navigate to the service login page in the virtual browser
+4. Log in manually — cookies persist in `browser_data/`
 5. Use `monitor` for continuous health checking
 
 
@@ -523,7 +528,7 @@ python phantom/gmail_health.py json        # Machine-readable output
 | `phantom/presets.py` | Pre-built task templates |
 | `phantom/vnc.py` | VNC URL generation and human help requests |
 | `phantom/stealth.py` | Anti-bot stealth JS + check (auto-applied via BrowserInterface) |
-| `phantom/gmail_health.py` | Gmail session health checker and monitor |
+| `phantom/session_health.py` | Multi-service session health checker (Google, LinkedIn, Twitter, etc.) |
 | `browser_interface.py` | Low-level Playwright browser wrapper (connect_cdp / start) |
 | `memory/phantom_memory.md` | Your persistent memory file |
 
