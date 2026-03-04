@@ -85,6 +85,25 @@ EOF
     supervisorctl reread 2>/dev/null || true
     supervisorctl update 2>/dev/null || true
     echo "  ✓ Supervisord reloaded"
+
+    # --- Force VNC to run without password ---
+    # The platform may start x11vnc with -rfbauth before install.sh runs.
+    # Our supervisord config uses -nopw, but the old process persists.
+    # Fix: remove the password file and restart VNC services.
+    echo "▶ Configuring VNC (no password)..."
+    rm -f /root/.vnc/passwd 2>/dev/null || true
+    mkdir -p /root/.vnc
+
+    # Kill any pre-existing x11vnc/novnc that the platform started
+    pkill -f "x11vnc" 2>/dev/null || true
+    pkill -f "websockify.*6080" 2>/dev/null || true
+    sleep 2
+
+    # Restart via supervisord (uses our -nopw config)
+    supervisorctl restart x11vnc 2>/dev/null || true
+    supervisorctl restart novnc 2>/dev/null || true
+    sleep 3
+    echo "  ✓ VNC services restarted (no password, noVNC on port 6080)"
 else
     echo "  ⚠ Supervisord not found or config missing, skipping"
 fi
@@ -223,7 +242,7 @@ echo ""
 echo "Services (managed by supervisord):"
 echo "  • Xvfb:          display :99"
 echo "  • x11vnc:        port 5901 (no password)"
-echo "  • noVNC:         port 6081 (websockify direct, no nginx)"
+echo "  • noVNC:         port 6080 (websockify direct, no nginx, no password)"
 echo "  • Browser:       port 9222 (CDP, browser_data profile, psiphon proxy)"
 echo "  • Psiphon:       port 18080 (HTTP proxy) / 18081 (SOCKS)"
 echo "  • Dashboard:     port 9000"

@@ -372,45 +372,53 @@ _S3_CONFIG_LOCATIONS = [
 
 
 def _get_s3_config() -> dict:
-    """Load S3 configuration from s3_config.json at repo root."""
+    """Load S3 configuration from s3_config.json at repo root.
+
+    Returns empty dict if no config file is found (S3 caching will be skipped).
+    """
     for path in _S3_CONFIG_LOCATIONS:
         if os.path.isfile(path):
             with open(path) as f:
                 return json.load(f)
-    raise FileNotFoundError(
-        "❌ s3_config.json not found!\n"
-        "   The S3 cache config is REQUIRED for slack_interface to function.\n"
-        "   Expected locations:\n"
-        + "".join(f"     - {p}\n" for p in _S3_CONFIG_LOCATIONS)
-        + "\n   Create s3_config.json with: aws_access_key_id, aws_secret_access_key, bucket_name, region"
-    )
+    logging.debug("s3_config.json not found in any expected location — S3 caching disabled")
+    return {}
 
 
-# --- Validate s3_config.json exists at import time ---
-if not any(os.path.isfile(p) for p in _S3_CONFIG_LOCATIONS):
-    raise FileNotFoundError(
-        "❌ s3_config.json not found!\n"
-        "   The S3 cache config is REQUIRED for slack_interface to function.\n"
-        "   Expected locations:\n"
-        + "".join(f"     - {p}\n" for p in _S3_CONFIG_LOCATIONS)
-        + "\n   Create s3_config.json with: aws_access_key_id, aws_secret_access_key, bucket_name, region"
+# --- Check s3_config.json at import time (non-fatal) ---
+_s3_available = any(os.path.isfile(p) for p in _S3_CONFIG_LOCATIONS)
+if not _s3_available:
+    logging.warning(
+        "⚠️ s3_config.json not found — S3 caching disabled. "
+        "Slack will work but may hit rate limits more often. "
+        "Expected locations: %s",
+        ", ".join(_S3_CONFIG_LOCATIONS),
     )
 
 
 def _init_s3():
     """Initialise the S3 client singleton from s3_config.json."""
-    global _s3_client, _s3_bucket, _s3_cache_prefix
+    global _s3_client, _s3_bucket, _s3_cache_prefix, _s3_available
     if _s3_client is not None:
         return
-    cfg = _get_s3_config()
-    _s3_client = boto3.client(
-        "s3",
-        aws_access_key_id=cfg["aws_access_key_id"],
-        aws_secret_access_key=cfg["aws_secret_access_key"],
-        region_name=cfg.get("region", "ap-southeast-2"),
-    )
-    _s3_bucket = cfg["bucket_name"]
-    _s3_cache_prefix = cfg.get("cache_prefix", "slack-channel")
+    if not _s3_available:
+        return  # S3 not configured, skip silently
+    try:
+        cfg = _get_s3_config()
+        if not cfg or "aws_access_key_id" not in cfg:
+            logging.debug("S3 config incomplete — caching disabled")
+            _s3_available = False
+            return
+        _s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=cfg["aws_access_key_id"],
+            aws_secret_access_key=cfg["aws_secret_access_key"],
+            region_name=cfg.get("region", "ap-southeast-2"),
+        )
+        _s3_bucket = cfg["bucket_name"]
+        _s3_cache_prefix = cfg.get("cache_prefix", "slack-channel")
+    except Exception as e:
+        logging.warning("⚠️ S3 client init failed — caching disabled: %s", e)
+        _s3_available = False
 
 
 def _s3_key(name: str) -> str:
@@ -1637,6 +1645,8 @@ def cmd_config(client: SlackClient, tokens: SlackTokens, args) -> None:
     """Show or set configuration."""
     config = SlackConfig.load(args.config_file)
     
+    changed = False
+    
     # Set default channel
     if hasattr(args, 'set_channel') and args.set_channel:
         channel = args.set_channel
@@ -1652,6 +1662,24 @@ def cmd_config(client: SlackClient, tokens: SlackTokens, args) -> None:
                         config.default_channel = channel
                         config.default_channel_id = ch.get('id')
                         print(f"✅ Found channel: {channel} (ID: {config.default_channel_id})")
+                        
+                        # Auto-join the channel so the bot can read messages
+                        try:
+                            join_resp = client.join_channel(token, config.default_channel_id)
+                            if join_resp.get("ok"):
+                                print(f"✅ Bot joined channel: {channel}")
+                            elif join_resp.get("error") == "missing_scope":
+                                print(f"⚠️ Bot lacks 'channels:join' scope — please invite the bot manually: /invite @superninja")
+                            elif join_resp.get("error") == "is_archived":
+                                print(f"⚠️ Channel {channel} is archived")
+                            else:
+                                # Already in channel or other non-fatal error
+                                err = join_resp.get("error", "unknown")
+                                if err != "already_in_channel":
+                                    print(f"⚠️ Could not auto-join channel ({err}) — you may need to invite the bot manually")
+                        except Exception as e:
+                            print(f"⚠️ Auto-join failed ({e}) — please invite the bot manually: /invite @superninja")
+                        
                         break
                 else:
                     print(f"⚠️ Channel {channel} not found, saving name only")
@@ -1663,10 +1691,9 @@ def cmd_config(client: SlackClient, tokens: SlackTokens, args) -> None:
             # Assume it's a channel ID
             config.default_channel_id = channel
         
-        config.save(args.config_file)
-        return
+        changed = True
     
-    # Set default agent
+    # Set default agent (no longer skipped when --set-channel is also provided)
     if hasattr(args, 'set_agent') and args.set_agent:
         agent = args.set_agent.lower()
         if agent not in AGENT_AVATARS:
@@ -1677,6 +1704,9 @@ def cmd_config(client: SlackClient, tokens: SlackTokens, args) -> None:
         config.default_agent = agent
         agent_info = AGENT_AVATARS[agent]
         print(f"✅ Default agent set to: {agent_info['name']} ({agent_info['role']})")
+        changed = True
+    
+    if changed:
         config.save(args.config_file)
         return
     

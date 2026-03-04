@@ -42,15 +42,15 @@ def _get_slack() -> "SlackInterface":
 # Configuration
 REPO_ROOT = Path(__file__).parent
 CONFIG_PATH = Path.home() / ".agent_settings.json"
-POLL_INTERVAL = 60  # base seconds
-POLL_JITTER = 5  # random jitter seconds
+POLL_INTERVAL = 120  # base seconds (increased from 60 to reduce API calls)
+POLL_JITTER = 10  # random jitter seconds
 MAX_RUNTIME = 24 * 60 * 60  # 24 hours in seconds
 SEEN_MESSAGES_FILE = REPO_ROOT / ".seen_messages.json"
 AGENT_MESSAGES_FILE = REPO_ROOT / ".agent_messages.json"  # Track agent's own messages for thread monitoring
 
 # Rate limiting configuration
-BACKOFF_INITIAL = 60  # Initial backoff: 1 minute
-BACKOFF_MAX = 600  # Max backoff: 10 minutes
+BACKOFF_INITIAL = 90  # Initial backoff: 1.5 minutes (increased from 60)
+BACKOFF_MAX = 900  # Max backoff: 15 minutes (increased from 600)
 BACKOFF_MULTIPLIER = 2  # Double the backoff each time
 
 
@@ -62,8 +62,12 @@ class RateLimitHandler:
         self.consecutive_rate_limits = 0
         self.last_rate_limit_time = 0
     
-    def on_rate_limit(self):
-        """Called when a rate limit is encountered."""
+    def on_rate_limit(self, retry_after: int = 0):
+        """Called when a rate limit is encountered.
+        
+        Args:
+            retry_after: Value from Retry-After header (seconds), if available.
+        """
         self.consecutive_rate_limits += 1
         self.last_rate_limit_time = time.time()
         
@@ -71,6 +75,10 @@ class RateLimitHandler:
             self.current_backoff = BACKOFF_INITIAL
         else:
             self.current_backoff = min(self.current_backoff * BACKOFF_MULTIPLIER, BACKOFF_MAX)
+        
+        # If Slack told us how long to wait, respect it with a 30s buffer
+        if retry_after > 0:
+            self.current_backoff = max(self.current_backoff, retry_after + 30)
         
         print(f"⚠️ Rate limited! Backing off for {self.current_backoff}s (attempt #{self.consecutive_rate_limits})", flush=True)
         return self.current_backoff
@@ -480,7 +488,7 @@ def main():
                 
                 threads_checked = 0
                 for raw_msg in raw_messages:
-                    if threads_checked >= 3:  # Limit threads per cycle
+                    if threads_checked >= 2:  # Limit threads per cycle (reduced from 3 to save API calls)
                         break
                     
                     reply_count = raw_msg.get("reply_count", 0)
