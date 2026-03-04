@@ -56,7 +56,7 @@ MONITOR_LOCK_FILE = REPO_ROOT / ".monitor.lock"
 BACKOFF_INITIAL = 45  # Initial backoff on rate limit
 BACKOFF_MAX = 900  # Max backoff: 15 minutes (increased from 600)
 BACKOFF_MULTIPLIER = 2  # Double the backoff each time
-MAX_MESSAGE_AGE = 300  # Ignore messages older than 5 minutes (prevents reprocessing on restart)
+MAX_MESSAGE_AGE = 1800  # Ignore messages older than 30 minutes (must be generous to survive rate-limit storms)
 
 
 def check_monitor_single_instance():
@@ -425,7 +425,7 @@ BEGIN — respond to the {len(pending_messages)} message(s) above now."""
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
             env=batch_env,
         )
 
@@ -511,19 +511,23 @@ def main():
     # On (re)deploy the .seen_messages.json may be stale or missing.
     # Fetch the current channel snapshot and mark every message as
     # seen so only messages arriving *after* this point get processed.
-    print("🌱 Seeding: marking existing channel messages as seen...", flush=True)
-    try:
-        seed_msgs, _ = get_last_messages(20)
-        seeded = 0
-        for msg in seed_msgs:
-            msg_id = msg.get("ts", "") or msg.get("timestamp", "")
-            if msg_id and msg_id not in seen_messages:
-                seen_messages.add(msg_id)
-                seeded += 1
-        save_seen_messages(seen_messages)
-        print(f"  ✅ Seeded {seeded} new message(s) ({len(seed_msgs)} total in channel)", flush=True)
-    except Exception as e:
-        print(f"  ⚠️ Seed failed (non-fatal): {e}", flush=True)
+    # Skip seeding if we already have a substantial seen list (restart, not fresh deploy).
+    if len(seen_messages) < 3:
+        print("🌱 Seeding: marking existing channel messages as seen...", flush=True)
+        try:
+            seed_msgs, _ = get_last_messages(20)
+            seeded = 0
+            for msg in seed_msgs:
+                msg_id = msg.get("ts", "") or msg.get("timestamp", "")
+                if msg_id and msg_id not in seen_messages:
+                    seen_messages.add(msg_id)
+                    seeded += 1
+            save_seen_messages(seen_messages)
+            print(f"  ✅ Seeded {seeded} new message(s) ({len(seed_msgs)} total in channel)", flush=True)
+        except Exception as e:
+            print(f"  ⚠️ Seed failed (non-fatal): {e}", flush=True)
+    else:
+        print(f"🌱 Skipping seed: {len(seen_messages)} messages already tracked (restart detected)", flush=True)
 
     print(f"📡 Starting monitor loop (max {MAX_RUNTIME // 60} minutes)...", flush=True)
 
