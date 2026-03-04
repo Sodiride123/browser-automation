@@ -16,13 +16,14 @@ The orchestrator runs **two parallel processes**:
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   Process 1 (Work):                                                      │
-│     - Reads spec, verifies browser/Slack connectivity                   │
-│     - Does NOT read Slack for messages (Monitor handles that)           │
+│     - Reads spec, verifies browser connectivity                         │
+│     - MUST NOT use slack_interface.py in any way                        │
 │     - Updates memory file on completion                                  │
 │                                                                          │
 │   Process 2 (Monitor):                                                   │
 │     - Exclusive Slack watcher — polls every ~120s for mentions          │
 │     - Batches all pending messages into a single Claude invocation      │
+│     - Sets PHANTOM_BATCH_MODE=1 env var for the Claude subprocess      │
 │     - Claude responds to each message via slack_interface.py            │
 │                                                                          │
 │   WAKE UP INSTRUCTION                                                    │
@@ -63,6 +64,15 @@ python slack_interface.py say "Your message here"
 # Upload files (uploads with agent impersonation)
 python slack_interface.py upload design.png --title "Design Mockup"
 ```
+
+### Batch Mode (`PHANTOM_BATCH_MODE`)
+
+When the Monitor detects Slack mentions, it invokes Claude with `PHANTOM_BATCH_MODE=1` set in the environment. This activates safeguards in `slack_interface.py`:
+
+- **`read` command is blocked** — all messages to respond to are provided in the prompt. Do not attempt to read Slack independently.
+- **Anti-duplicate guard** (`_check_batch_dedup()`) — tracks messages sent per thread via `/tmp/phantom_batch_dedup/`. Allows up to 4 messages per thread (ack + results + caption + buffer), then silently blocks further sends. The monitor cleans this directory before each new batch.
+
+This prevents duplicate responses when Claude autonomously re-reads the codebase and re-executes tasks within a single batch invocation.
 
 ## Channel Structure
 

@@ -68,7 +68,10 @@ cat > memory/phantom_memory.md << 'MEMEOF'
 (None yet)
 MEMEOF
 
-# 11. Remove files outside the repo that are environment-specific
+# 11. Remove batch dedup temp files
+rm -rf /tmp/phantom_batch_dedup/
+
+# 12. Remove files outside the repo that are environment-specific
 rm -f /root/.agent_settings.json
 rm -f /root/.vnc/passwd /root/.vnc/password.txt
 rm -f /root/s3_config.json
@@ -108,7 +111,7 @@ rm -f /root/s3_config.json
 
 | Path | What It Is |
 |------|-----------|
-| `reports/*` | Task output artifacts (screenshots, PNGs from completed tasks) |
+| `reports/*.png` | Task screenshots — may contain **sensitive content** (Gmail inbox, search results, login pages, etc.). Keep `reports/.gitkeep`. |
 | `logs/*` | Daily log files (orchestrator, phantom, etc.) |
 
 ### Python Cache (must delete)
@@ -128,7 +131,13 @@ rm -f /root/s3_config.json
 
 | Path | What It Is |
 |------|-----------|
-| `memory/phantom_memory.md` | Persistent memory updated after each session — must reset to blank template, not delete |
+| `memory/phantom_memory.md` | Persistent memory updated after each session — contains session history, user IDs, site selectors, and VNC URLs. Must reset to blank template, not delete. |
+
+### Batch Dedup Temp Files (must delete)
+
+| Path | What It Is |
+|------|-----------|
+| `/tmp/phantom_batch_dedup/` | Per-thread message counters used by the anti-duplicate guard in `slack_interface.py`. Created during batch mode, cleaned by the monitor before each cycle. |
 
 ### Files Outside the Repo (must delete on the machine)
 

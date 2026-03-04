@@ -55,7 +55,7 @@ Phantom is a browser automation agent that receives tasks via Slack, executes th
 
 - **Persistent Browser**: Chromium runs as a background server on port 9222. Tasks connect via CDP — tabs, cookies, and state survive across tasks.
 - **Claude Code as Brain**: No hardcoded agent loop. Claude Code reads the spec, plans, and calls observer/actions directly.
-- **Dual-Process Architecture**: The orchestrator runs two parallel processes — a **Work** process (initialization and task execution) and a **Monitor** process (exclusive Slack listener). Only the Monitor polls Slack for mentions, preventing duplicate responses.
+- **Dual-Process Architecture**: The orchestrator runs two parallel processes — a **Work** process (initialization only, no Slack access) and a **Monitor** process (exclusive Slack listener). Only the Monitor polls Slack for mentions. An anti-duplicate guard (`PHANTOM_BATCH_MODE`) limits messages per thread to prevent double-responses.
 - **Self-Healing Selectors**: Actions module tries multiple selector strategies (ID, text, aria, CSS) and falls back automatically.
 - **Set-of-Mark (SoM) Labels**: Observer overlays numbered labels on interactive elements for reliable element targeting.
 
@@ -116,6 +116,17 @@ bash setup.sh --channel "#your-channel" --agent phantom
 ```
 
 This handles everything: dependencies, services, Slack config, VNC, and starts the orchestrator.
+
+### Two-Stage Deploy (For Shared Images)
+
+If you have a pre-built sandbox image with dependencies already installed:
+
+```bash
+cd /workspace/browser-automation
+bash stage2_configure.sh --channel "#your-channel" --agent phantom
+```
+
+To build the image yourself, run `bash stage1_install.sh` on a clean sandbox, then snapshot it.
 
 > 📖 **Full deployment guide:** [DEPLOY.md](DEPLOY.md) — includes token system, troubleshooting, VM image building, and more.
 

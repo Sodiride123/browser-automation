@@ -399,17 +399,22 @@ The persistent browser is always in **headed mode** and visible on VNC.
 
 ## Communication
 
-### Slack Commands
+### Slack Restrictions
+
+> **CRITICAL:** During Work mode (startup/initialization), you must **NEVER** use `slack_interface.py` in any way — no reading, sending, or uploading. The Monitor process handles all Slack communication exclusively. Using `slack_interface.py` during Work mode causes duplicate responses.
+
+When running in **batch mode** (responding to a Slack mention via the Monitor), `slack_interface.py` is available for sending replies. The Monitor provides the thread timestamp in your prompt — always reply in the specified thread.
+
+### Slack Commands (batch mode only)
 ```bash
-# Post as Phantom
-python slack_interface.py say "message"
+# Post as Phantom (always use -t to reply in thread)
+python slack_interface.py say "message" -t <thread_ts>
 
-# Read channel
-python slack_interface.py read -l 50
-
-# Upload screenshot
-python slack_interface.py upload phantom/screenshots/step_005.png --title "Current page"
+# Upload screenshot (always use -t to reply in thread)
+python slack_interface.py upload phantom/screenshots/step_005.png --title "Current page" -t <thread_ts>
 ```
+
+> **Note:** `python slack_interface.py read` is disabled during batch mode. All messages you need to respond to are provided in your prompt.
 
 ### Message Style
 - Keep messages SHORT — 2-4 sentences

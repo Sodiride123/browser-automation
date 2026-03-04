@@ -609,17 +609,27 @@ def run_agent(agent: dict, task: str = "") -> None:
     
     prompt = build_prompt(agent, task)
     
-    # Run Claude Code CLI
+    # Run Claude Code CLI directly (no wrapper, no -c to avoid session contamination)
     # -p: Print mode (non-interactive)
-    # Permissions are configured in ~/.claude/settings.json
-    # Timeout: 15 minutes (900 seconds) to allow for complex tasks
+    # --no-session-persistence: don't save/resume sessions
+    # --dangerously-skip-permissions: running in sandbox
+    settings_file = str(REPO_ROOT / "settings.json")
+    work_env = os.environ.copy()
+    work_env.pop("CLAUDECODE", None)
+    work_env.pop("CLAUDE_CODE_ENTRYPOINT", None)
     try:
         result = subprocess.run(
-            [str(REPO_ROOT / "claude-wrapper.sh"), "-c", "-p", prompt],
+            [
+                "/root/.local/bin/claude",
+                "--settings", settings_file,
+                "--no-session-persistence",
+                "-p", prompt,
+            ],
             cwd=str(REPO_ROOT),
             timeout=900,  # 15 minutes
             capture_output=True,
             text=True,
+            env=work_env,
         )
         if result.stdout:
             agent_logger.info(f"Claude output:\n{result.stdout}")
@@ -854,7 +864,7 @@ Configuration:
     else:
         import multiprocessing
 
-        work_task = "Read your spec and documentation files, verify browser and Slack connectivity, and update your memory file. Do NOT read Slack for new messages or respond to any — the monitor process handles all Slack message detection and will invoke you separately when needed."
+        work_task = "Read your spec and documentation files, verify browser connectivity only (navigate to example.com), and update your memory file. CRITICAL: Do NOT use slack_interface.py in any way. Do NOT read, send, or respond to any Slack messages. Do NOT run 'python slack_interface.py' with any arguments. The monitor process handles ALL Slack communication — you must never touch Slack."
 
         def run_monitor():
             """Run monitor.py in a subprocess with unbuffered output."""
@@ -882,12 +892,15 @@ Configuration:
 
             for p in processes:
                 p.join()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
             logger.info("👋 Stopping processes...")
             for p in processes:
                 p.terminate()
             for p in processes:
-                p.join()
+                p.join(timeout=10)
+            for p in processes:
+                if p.is_alive():
+                    p.kill()
             logger.info("All processes terminated")
 
         logger.info("✅ Both processes completed")

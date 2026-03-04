@@ -1754,6 +1754,29 @@ def cmd_config(client: SlackClient, tokens: SlackTokens, args) -> None:
     print("=" * 60 + "\n")
 
 
+def _check_batch_dedup(thread_ts: str) -> bool:
+    """In PHANTOM_BATCH_MODE, track how many messages were sent per thread.
+    Returns True if this message should be BLOCKED (duplicate detected)."""
+    if os.environ.get("PHANTOM_BATCH_MODE") != "1" or not thread_ts:
+        return False
+    dedup_dir = Path("/tmp/phantom_batch_dedup")
+    dedup_dir.mkdir(exist_ok=True)
+    safe_ts = thread_ts.replace(".", "_")
+    count_file = dedup_dir / f"{safe_ts}.count"
+    try:
+        count = int(count_file.read_text().strip()) if count_file.exists() else 0
+    except (ValueError, OSError):
+        count = 0
+    # Allow up to 4 messages per thread (ack + results + caption + extra)
+    # Block anything beyond that (the duplicate set)
+    count += 1
+    count_file.write_text(str(count))
+    if count > 4:
+        print(f"⚠️ Batch dedup: blocked message #{count} to thread {thread_ts} (duplicate)")
+        return True
+    return False
+
+
 def cmd_say(client: SlackClient, tokens: SlackTokens, args) -> None:
     """Send a message to the default channel as the configured agent."""
     config = SlackConfig.load(args.config_file)
@@ -1795,20 +1818,27 @@ def cmd_say(client: SlackClient, tokens: SlackTokens, args) -> None:
     
     message = args.message
     thread = args.thread if hasattr(args, 'thread') else None
-    
+
+    # Block duplicate messages in batch mode
+    if _check_batch_dedup(thread):
+        print("✅ Message sent successfully!")  # Lie to Claude so it doesn't retry
+        print(f"   Channel: (dedup-blocked)")
+        print(f"   Timestamp: 0")
+        return
+
     # Get agent avatar info
     agent_info = get_agent_avatar(agent)
     username = agent_info['name']
     icon_url = agent_info['icon_url']
     icon_emoji = None  # Don't use emoji when we have custom avatar URL
-    
+
     # Show which channel we're sending to
     channel_display = channel if channel.startswith('#') else f"ID:{channel}"
     print(f"\n📤 Sending to {channel_display}...")
     print(f"   As: {username} ({agent_info['role']})")
     print(f"   Avatar: {agent_info['emoji']} Custom image")
-    
-    result = client.send_message(token, channel, message, thread, 
+
+    result = client.send_message(token, channel, message, thread,
                                   username=username, icon_emoji=icon_emoji, icon_url=icon_url)
     
     logger = _get_logger()
@@ -1828,6 +1858,9 @@ def cmd_say(client: SlackClient, tokens: SlackTokens, args) -> None:
 
 def cmd_read(client: SlackClient, tokens: SlackTokens, args) -> None:
     """Read messages from the default channel."""
+    if os.environ.get("PHANTOM_BATCH_MODE") == "1":
+        print("⚠️ Read disabled in batch mode. All messages to respond to were provided in your prompt. Do NOT attempt to read Slack — just respond to the messages already given to you.")
+        return
     config = SlackConfig.load(args.config_file)
     
     # Determine channel: CLI arg > config default
@@ -1970,6 +2003,11 @@ def cmd_upload(client: SlackClient, tokens: SlackTokens, args) -> None:
         print("\n   Or specify channel with -c:", file=sys.stderr)
         print("   python slack_interface.py upload file.png -c '#channel'", file=sys.stderr)
         sys.exit(1)
+
+    # Block duplicate uploads in batch mode
+    if _check_batch_dedup(thread):
+        print("✅ File uploaded successfully!")  # Lie to Claude so it doesn't retry
+        return
 
     channel_display = channel if channel.startswith('#') else f"ID:{channel}"
     print(f"\n📤 Uploading to {channel_display}...")
@@ -2696,11 +2734,14 @@ class SlackInterface:
             else:
                 result["message_error"] = msg_response.get("error")
 
-        # Upload the file as a thread reply (less prominent than the agent message)
+        # Upload the file as a thread reply (less prominent than the agent message).
+        # Use the plain filename (not the display title) to avoid duplicating
+        # the title text that the agent message already shows.
+        plain_filename = Path(file_path).name if file_path else file_title
         upload_response = self.client.upload_file_v2(
             token, channel_id,
             file_path=file_path,
-            title=file_title,
+            title=plain_filename,
             thread_ts=upload_thread_ts
         )
         

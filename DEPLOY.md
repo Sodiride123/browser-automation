@@ -243,7 +243,49 @@ grep 'unset CLAUDECODE' claude-wrapper.sh
 
 ### Bot sends duplicate replies
 
-Ensure only the Monitor process reads Slack. The work process task in `orchestrator.py` must NOT contain instructions to read Slack for messages. The default work task should say "Do NOT read Slack for new messages."
+The system has multiple layers of duplicate prevention:
+1. **Work process** must NEVER use `slack_interface.py` — only the Monitor handles Slack
+2. **`PHANTOM_BATCH_MODE=1`** env var blocks `slack_interface.py read` during batch responses
+3. **Anti-duplicate guard** (`_check_batch_dedup()`) limits messages per thread to 4 per batch cycle
+
+If duplicates still appear, check:
+- `orchestrator.py` work_task does NOT contain any `slack_interface.py` instructions
+- Monitor logs show "Batch dedup: blocked message" entries (guard is working)
+- `/tmp/phantom_batch_dedup/` directory exists during batch runs
+
+### "Another orchestrator instance is already running!"
+
+The orchestrator uses `.orchestrator.lock` with a PID + heartbeat to prevent duplicates. If it crashes or is killed, the lock file may remain stale.
+
+```bash
+# Check if the PID in the lock is actually running
+cat .orchestrator.lock
+ps aux | grep orchestrator
+
+# If no orchestrator is running, remove the stale lock
+rm -f .orchestrator.lock
+
+# Then restart
+python3 orchestrator.py
+```
+
+The lock has a 10-minute heartbeat staleness timeout — if the heartbeat is older than 10 minutes, the orchestrator will override it automatically.
+
+### `settings.json` generation fails
+
+The orchestrator auto-generates `settings.json` from `/root/.claude/settings.json` on every start. If this file is missing or malformed:
+
+```bash
+# Check if the source file exists and has valid content
+cat /root/.claude/settings.json
+
+# Look for ANTHROPIC_AUTH_TOKEN and BASE_URL fields
+# If missing, the platform's ninja_cline_setup.sh may not have run yet
+```
+
+### Dedup blocked messages in logs
+
+If you see `"⚠️ Batch dedup: blocked message #N to thread ..."` in the orchestrator log, this is **normal behavior** — the anti-duplicate guard is preventing extra messages. Only investigate if legitimate messages are being blocked (the limit is 4 per thread per batch cycle).
 
 ### Browser not connecting (CDP)
 
@@ -262,7 +304,28 @@ curl -s http://localhost:9222/json/version
 
 ## For VM Image Builders
 
-If you're preparing a clean VM image for distribution:
+### Two-Stage Deployment (Recommended)
+
+For sharing sandbox images where dependencies are pre-installed:
+
+**Stage 1: Install dependencies + prepare image** (run once, then snapshot)
+```bash
+git clone https://github.com/Sodiride123/browser-automation.git /workspace/browser-automation
+cd /workspace/browser-automation
+bash stage1_install.sh
+```
+This runs `install.sh`, verifies all services, then stops services and cleans temp files. The sandbox is ready to snapshot.
+
+**Stage 2: Configure + run** (run on the shared image, fast)
+```bash
+cd /workspace/browser-automation
+bash stage2_configure.sh --channel "#their-channel" --agent phantom
+```
+This restarts services, configures Slack, and starts the orchestrator. Takes seconds since all deps are already installed.
+
+### Manual Image Cleanup
+
+If you prefer to clean up manually before snapshotting:
 
 ```bash
 cd /workspace/browser-automation
@@ -271,6 +334,7 @@ cd /workspace/browser-automation
 rm -rf phantom/browser_data/ phantom/screenshots/* phantom/psiphon_data/
 rm -rf phantom/.browser_server.pid logs/* __pycache__/ phantom/__pycache__/
 rm -f .seen_messages.json .agent_messages.json .orchestrator.lock settings.json
+rm -rf /tmp/phantom_batch_dedup/
 
 # 2. Reset memory
 cat > memory/phantom_memory.md << 'EOF'
@@ -308,5 +372,7 @@ git diff
 Then snapshot the VM. On next boot, the user just runs:
 ```bash
 cd /workspace/browser-automation
-bash setup.sh --channel "#their-channel" --agent phantom
+bash stage2_configure.sh --channel "#their-channel" --agent phantom
+# Or the all-in-one script:
+bash setup.sh --skip-install --channel "#their-channel" --agent phantom
 ```

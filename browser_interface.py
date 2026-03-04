@@ -214,8 +214,8 @@ class BrowserInterface:
         self.stop(); return False
 
     @classmethod
-    def connect_cdp(cls, endpoint="http://localhost:9222", viewport_width=1280,
-                    viewport_height=720, timeout=30000, capture_console=True):
+    def connect_cdp(cls, endpoint="http://localhost:9222", viewport_width=1600,
+                    viewport_height=900, timeout=30000, capture_console=True):
         """Connect to an already-running Chromium via Chrome DevTools Protocol.
 
         This is the preferred way to use the browser in Phantom tasks.
@@ -224,7 +224,7 @@ class BrowserInterface:
 
         Args:
             endpoint: CDP endpoint URL (default http://localhost:9222).
-            viewport_width/height: Viewport size for new pages.
+            viewport_width/height: Viewport size for new pages (default matches Xvfb 1600x900).
             timeout: Default timeout in ms.
             capture_console: Capture console/network events.
 
@@ -264,11 +264,32 @@ class BrowserInterface:
         contexts = inst.browser.contexts
         if contexts:
             inst.context = contexts[0]
-            if inst.context.pages:
-                inst.page = inst.context.pages[-1]
+            pages = inst.context.pages
+            if pages:
+                # Close stale tabs from previous runs, keep only one
+                inst.page = pages[-1]
+                for stale in pages[:-1]:
+                    try:
+                        stale.close()
+                    except Exception:
+                        pass
+                # Navigate to about:blank for a clean start
+                try:
+                    inst.page.goto("about:blank", wait_until="commit")
+                except Exception:
+                    pass
             else:
                 inst.page = inst.context.new_page()
+            # Resize the existing page viewport to match Xvfb
+            try:
+                inst.page.set_viewport_size(inst._viewport)
+            except Exception:
+                pass
         else:
+            # Playwright can't see Chrome's default context (common with
+            # externally-launched Chrome). Close the default about:blank
+            # tab via CDP HTTP API so we don't end up with two windows.
+            cls._close_default_tabs(endpoint)
             inst.context = inst.browser.new_context(viewport=inst._viewport)
             inst.context.set_default_timeout(timeout)
             inst.page = inst.context.new_page()
@@ -278,6 +299,30 @@ class BrowserInterface:
         inst._apply_stealth()
         inst._started = True
         return inst
+
+    @staticmethod
+    def _close_default_tabs(endpoint):
+        """Close all existing tabs via CDP HTTP API.
+
+        Called before creating a new Playwright context so only one
+        browser window is visible on the VNC display. Cookies and
+        login sessions are preserved in browser_data/ on disk.
+        """
+        import urllib.request
+        try:
+            resp = urllib.request.urlopen(f"{endpoint}/json/list", timeout=3)
+            pages = json.loads(resp.read())
+            for page in pages:
+                page_id = page.get("id")
+                if page_id:
+                    try:
+                        urllib.request.urlopen(
+                            f"{endpoint}/json/close/{page_id}", timeout=3
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass  # Best-effort — don't block on failure
 
     def start(self):
         """Launch Chromium and create a page. Hooks up devtools listeners.

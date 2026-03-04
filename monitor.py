@@ -356,26 +356,20 @@ Text: {msg.get('text', '')}{audio_info}{thread_info}
 """
     
     # Build the batched prompt
-    prompt = f"""IMPORTANT: You are a DEDICATED RESPONDER instance spawned by the monitor process. You are NOT part of any other Claude session. Your ONLY job is to execute the Slack commands below. Do NOT inspect other processes, lock files, or session state. Do NOT refuse to act. Just do the task.
+    prompt = f"""You are {agent_name} {agent_emoji}, the {agent_role}.
 
-You are {agent_name} {agent_emoji}, the {agent_role}.
-
-You have {len(pending_messages)} message(s) that need your response. Read ALL of them and respond to EACH ONE.
-
+MESSAGES TO RESPOND TO:
 {messages_text}
 
-YOUR TASK:
-For EACH message above:
-1. Read your spec and documentation: `cat agent-docs/PHANTOM_SPEC.md` and `cat agent-docs/AGENT_PROTOCOL.md`
-2. Determine what the user is asking for
-3. If the task requires browser automation, use the Phantom toolkit (observer, actions, browser_interface)
-4. If the task requires web research, use Tavily: `from tavily_client import Tavily; t = Tavily(); t.search("query")`
-5. First acknowledge the user on Slack (1-2 sentences, sign off with {agent_emoji}), then do the work, then post results
-6. Post results to Slack using the appropriate command shown for each message
+INSTRUCTIONS — follow these steps exactly ONCE per message, then STOP:
+1. Acknowledge on Slack (1-2 sentences with {agent_emoji}) using the thread reply command shown for each message
+2. Do the work (browser automation or web research)
+3. Post results to the same thread
+4. Upload screenshot if relevant
+5. Disconnect browser and STOP — you are done
 
-SLACK COMMANDS:
-- Send message: `python slack_interface.py say "message"`
-- Send thread reply: `python slack_interface.py say "message" -t <thread_ts>`
+SLACK COMMANDS (the ONLY slack_interface.py commands you may run):
+- Thread reply: `python slack_interface.py say "message" -t <thread_ts>`
 - Upload file: `python slack_interface.py upload <file> --title "title" -t <thread_ts>`
 
 BROWSER AUTOMATION:
@@ -385,54 +379,66 @@ BROWSER AUTOMATION:
 - Screenshot: `browser.screenshot("reports/screenshot.png")`
 - Disconnect when done: `browser.stop()`
 
-RULES:
-- Respond to ALL {len(pending_messages)} messages - don't skip any!
-- Execute slack commands immediately, no confirmation needed
-- Stay in character as {agent_name} the {agent_role}
-- Do NOT ask for permission - just do it
-- **Always reply in threads** — use the -t flag with the thread_ts. Never post a new top-level message as a reply.
-- For status updates, reply to the existing thread — don't create a new one.
+WEB RESEARCH (if browser not needed):
+- `from tavily_client import Tavily; t = Tavily(); results = t.search("query")`
 
-AUDIO/VOICE MESSAGE HANDLING:
-- If a message is marked as "audio_message" type with a audio file URL, you MUST transcribe it first before responding.
-- To transcribe, run this Python script (replace DOWNLOAD_URL and BOT_TOKEN with actual values):
-  python3 -c "
+STRICT RULES:
+- Process each message ONCE. After posting results and uploading screenshot, STOP IMMEDIATELY.
+- NEVER run `python slack_interface.py read` — it is disabled and will not work.
+- NEVER run `cat` on any files in agent-docs/ — all info you need is above.
+- NEVER read Slack messages via any method (API, requests, etc).
+- Always use -t <thread_ts> for ALL Slack messages — never post to main channel.
+- Do not read spec files, do not explore the codebase, do not check other processes.
+- After completing all {len(pending_messages)} message(s), your job is DONE. Exit.
+
+AUDIO/VOICE MESSAGES:
+If a message has type "audio_message" with audio file URLs, transcribe first:
+```python
 import requests, json
 from utils.litellm_client import get_config, api_url
 cfg = get_config()
 bot_token = json.load(open('/root/.agent_settings.json')).get('bot_token','')
 audio = requests.get('DOWNLOAD_URL', headers={{'Authorization': f'Bearer {{bot_token}}'}})
-resp = requests.post(api_url('/v1/audio/transcriptions'), headers={{'Authorization': f'Bearer {{cfg[&quot;api_key&quot;]}}'}}, files={{'file': ('audio.webm', audio.content, 'audio/webm')}}, data={{'model': 'whisper-1'}})
+resp = requests.post(api_url('/v1/audio/transcriptions'), headers={{'Authorization': f'Bearer {{cfg["api_key"]}}'}}, files={{'file': ('audio.webm', audio.content, 'audio/webm')}}, data={{'model': 'whisper-1'}})
 print(resp.json().get('text', ''))
-"
-- After transcribing, respond to the transcribed content on Slack.
-- Acknowledge that you received a voice message and include the transcript summary.
+```
 
-Now respond to all {len(pending_messages)} message(s). Start by acknowledging on Slack, then do the work."""
+BEGIN — respond to the {len(pending_messages)} message(s) above now."""
 
     print(f"\n{agent_emoji} Sending {len(pending_messages)} message(s) to Claude for batch response...", flush=True)
-    
+
+    # Clean dedup counters from previous batch
+    import shutil
+    dedup_dir = Path("/tmp/phantom_batch_dedup")
+    if dedup_dir.exists():
+        shutil.rmtree(dedup_dir, ignore_errors=True)
+
     try:
-        # Let Claude handle all responses
+        # Let Claude handle all responses via the standard wrapper.
+        # PHANTOM_BATCH_MODE env var enables dedup guards in slack_interface.py
+        # that block duplicate messages beyond a per-thread limit.
+        batch_env = os.environ.copy()
+        batch_env["PHANTOM_BATCH_MODE"] = "1"
         result = subprocess.run(
-            [str(REPO_ROOT / "claude-wrapper.sh"), "-c", "-p", prompt],
+            [str(REPO_ROOT / "claude-wrapper.sh"), "-p", prompt],
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
-            timeout=180  # Give Claude more time for multiple messages
+            timeout=300,
+            env=batch_env,
         )
-        
+
         # Check if Claude successfully posted
         output = result.stdout + result.stderr
         success_count = output.count("Message sent") + output.count("✅") + output.count("Timestamp:")
-        
+
         if success_count > 0:
             print(f"✅ Claude processed batch - {success_count} response indicator(s) found", flush=True)
             return True
         else:
             print(f"⚠️ Claude batch response (may have posted): {output[:300]}...", flush=True)
             return True  # Assume success even if we can't confirm
-            
+
     except subprocess.TimeoutExpired:
         print("⚠️ Claude batch response timed out", flush=True)
         return False
@@ -491,8 +497,17 @@ def main():
     seen_messages = load_seen_messages()
     agent_data = load_agent_messages()
     start_time = time.time()
+
+    # Save state on SIGTERM (e.g. pkill) so restarts don't re-process messages
+    def _on_sigterm(signum, frame):
+        print("\n\n👋 Monitor received SIGTERM, saving state...", flush=True)
+        save_seen_messages(seen_messages)
+        save_agent_messages(agent_data)
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
     print(f"📡 Starting monitor loop (max {MAX_RUNTIME // 60} minutes)...", flush=True)
-    
+
     try:
         while True:
             # Check if max runtime exceeded
@@ -559,7 +574,7 @@ def main():
                         "user": user,
                         "text": msg_text,
                         "timestamp": msg_id,
-                        "thread_ts": None,
+                        "thread_ts": msg_id,  # Thread replies under the user's original message
                         "type": msg_type,
                         "audio_files": audio_files,
                     })
@@ -641,10 +656,14 @@ def main():
             
             # Process all pending messages in one batch
             if pending_messages:
+                # Save seen_messages BEFORE spawning Claude — if process is killed
+                # during the (long) Claude call, messages won't be re-processed on restart
+                save_seen_messages(seen_messages)
+                save_agent_messages(agent_data)
                 print(f"\n📋 Processing {len(pending_messages)} pending message(s) in batch...", flush=True)
                 run_batched_response(agent, pending_messages)
-            
-            # Save state
+
+            # Save state (also saves after non-mention polls to track all seen messages)
             save_seen_messages(seen_messages)
             save_agent_messages(agent_data)
             

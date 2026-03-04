@@ -93,7 +93,11 @@ browser-automation/
 │   └── phantom.png
 │
 ├── reports/                 # Task execution reports
-└── logs/                    # Execution logs (daily rotating)
+├── logs/                    # Execution logs (daily rotating)
+│
+# Runtime temp files (outside repo):
+# /tmp/phantom_batch_dedup/  — Per-thread message counters for anti-duplicate guard
+# /root/.agent_settings.json — Slack channel + agent config (created by setup.sh)
 ```
 
 ---
@@ -119,11 +123,11 @@ browser-automation/
 **Work loop architecture:**
 ```
 Main Process
-  ├── Process 1 (Work): Runs Claude Code for initialization tasks (does NOT read Slack)
+  ├── Process 1 (Work): Runs Claude Code for initialization tasks (MUST NOT use slack_interface.py)
   └── Process 2 (Monitor): Runs monitor.py — exclusive Slack watcher, batches mentions → Claude
 ```
 
-> **Important:** The Monitor process is the sole Slack listener. The Work process handles initialization (reading spec, verifying connectivity, updating memory) but never polls Slack for messages. This prevents duplicate replies. When the Monitor detects a mention, it invokes Claude Code separately via `claude-wrapper.sh` with a batched prompt.
+> **Important:** The Monitor process is the sole Slack listener. The Work process handles initialization (reading spec, verifying browser connectivity, updating memory) but **must NEVER use `slack_interface.py` in any way** — not to read, send, or respond to messages. This prevents duplicate replies. When the Monitor detects a mention, it invokes Claude Code via `claude-wrapper.sh` with `PHANTOM_BATCH_MODE=1` set in the environment.
 
 **Key configs:**
 - Lock file: `.orchestrator.lock` (PID + heartbeat, 10-min staleness timeout)
@@ -150,17 +154,27 @@ Main Process
 - Thread tracking: stores agent's own messages in `.agent_messages.json` (last 20)
 - Audio support: detects voice messages, passes to Claude for Whisper transcription
 - Max runtime: 24 hours, then exits
+- **Batch mode**: Sets `PHANTOM_BATCH_MODE=1` env var when invoking Claude, which enables the anti-duplicate guard in `slack_interface.py`
+
+**Anti-duplicate guard (`PHANTOM_BATCH_MODE`):**
+When the monitor spawns Claude for a batch response, it sets `PHANTOM_BATCH_MODE=1`. This activates the `_check_batch_dedup()` guard in `slack_interface.py`, which:
+- Tracks how many messages have been sent per thread (via `/tmp/phantom_batch_dedup/`)
+- Allows up to 4 messages per thread (ack + results + caption + buffer)
+- Silently blocks any additional messages (returns fake success so Claude doesn't retry)
+- The monitor cleans the dedup directory before each new batch cycle
 
 **Message batching format sent to Claude:**
 ```
 --- Message 1 (mention) ---
 From: username | Time: ts | Text: content
-Channel: main (reply with: python slack_interface.py say "message")
+Thread: thread_ts (reply with: python slack_interface.py say "message" -t {thread_ts})
 
 --- Message 2 (thread_reply) ---
 From: username | Time: ts | Text: content
 Thread: thread_ts (reply with: python slack_interface.py say "message" -t {thread_ts})
 ```
+
+All replies are threaded under the original message (both channel mentions and thread replies).
 
 ---
 
@@ -212,7 +226,9 @@ python slack_interface.py channels / users / history / scopes / join / create
 **CDP mode (primary):**
 - Connects to browser on `http://localhost:9222`
 - Health-checks `/json/version` endpoint first
+- Closes stale `about:blank` tabs via `_close_default_tabs()` before creating a new context (prevents a second browser window)
 - Reuses existing tabs and cookies
+- Viewport set to 1600x900 to match Xvfb
 - `stop()` only disconnects — browser keeps running
 - Stealth patches auto-applied on connect
 
@@ -320,7 +336,7 @@ Dataclass with defaults → JSON override → env var override:
 | model | claude-sonnet-4-6 | PHANTOM_MODEL |
 | max_steps | 30 | PHANTOM_MAX_STEPS |
 | headless | False | PHANTOM_HEADLESS |
-| viewport | 1280x720 | — |
+| viewport | 1600x900 | — |
 | timeout | 30000ms | PHANTOM_TIMEOUT |
 | proxy | None | PHANTOM_PROXY |
 
