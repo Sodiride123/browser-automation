@@ -56,6 +56,7 @@ MONITOR_LOCK_FILE = REPO_ROOT / ".monitor.lock"
 BACKOFF_INITIAL = 45  # Initial backoff on rate limit
 BACKOFF_MAX = 900  # Max backoff: 15 minutes (increased from 600)
 BACKOFF_MULTIPLIER = 2  # Double the backoff each time
+MAX_MESSAGE_AGE = 300  # Ignore messages older than 5 minutes (prevents reprocessing on restart)
 
 
 def check_monitor_single_instance():
@@ -506,6 +507,24 @@ def main():
         sys.exit(0)
     signal.signal(signal.SIGTERM, _on_sigterm)
 
+    # ── Startup seed ────────────────────────────────────────────────
+    # On (re)deploy the .seen_messages.json may be stale or missing.
+    # Fetch the current channel snapshot and mark every message as
+    # seen so only messages arriving *after* this point get processed.
+    print("🌱 Seeding: marking existing channel messages as seen...", flush=True)
+    try:
+        seed_msgs, _ = get_last_messages(20)
+        seeded = 0
+        for msg in seed_msgs:
+            msg_id = msg.get("ts", "") or msg.get("timestamp", "")
+            if msg_id and msg_id not in seen_messages:
+                seen_messages.add(msg_id)
+                seeded += 1
+        save_seen_messages(seen_messages)
+        print(f"  ✅ Seeded {seeded} new message(s) ({len(seed_msgs)} total in channel)", flush=True)
+    except Exception as e:
+        print(f"  ⚠️ Seed failed (non-fatal): {e}", flush=True)
+
     print(f"📡 Starting monitor loop (max {MAX_RUNTIME // 60} minutes)...", flush=True)
 
     try:
@@ -547,7 +566,16 @@ def main():
                     continue
                 
                 seen_messages.add(msg_id)
-                
+
+                # Safety net: skip messages older than MAX_MESSAGE_AGE to
+                # avoid reprocessing historical backlog on restart
+                try:
+                    msg_age = time.time() - float(msg_id)
+                    if msg_age > MAX_MESSAGE_AGE:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
                 if check_for_mention(msg, agent):
                     user = msg.get("user", "") or msg.get("username", "Unknown")
                     is_audio = has_audio_attachment(msg)
