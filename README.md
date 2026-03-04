@@ -106,30 +106,35 @@ browser-automation/
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Python 3.11+
-- Claude Code CLI
-- Slack workspace with a dedicated channel
-- Slack bot token with required scopes
-
-### Installation
+### One-Command Deploy (NinjaTech Sandbox)
 
 ```bash
-cd browser-automation
-pip install -r requirements.txt
+git clone https://github.com/Sodiride123/browser-automation.git /workspace/browser-automation
+cd /workspace/browser-automation
+bash setup.sh --channel "#your-channel" --agent phantom
 ```
 
-### Configuration
+This handles everything: dependencies, services, Slack config, VNC, and starts the orchestrator.
+
+> 📖 **Full deployment guide:** [DEPLOY.md](DEPLOY.md) — includes token system, troubleshooting, VM image building, and more.
+
+### Manual Setup
+
+If you prefer step-by-step:
 
 ```bash
-# Configure Slack
-python slack_interface.py config --set-channel "#your-channel"
-python slack_interface.py config --set-agent phantom
+# 1. Install dependencies
+bash install.sh
 
-# Test Slack connection
+# 2. Configure Slack
+python slack_interface.py config --set-channel "#your-channel" --set-agent phantom
+
+# 3. Test Slack connection
 python slack_interface.py scopes
 python slack_interface.py read
+
+# 4. Start the orchestrator
+python orchestrator.py
 ```
 
 ### Usage
