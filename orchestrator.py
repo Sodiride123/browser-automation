@@ -221,6 +221,12 @@ def get_github_token() -> str | None:
 
 def login_github_cli(logger: logging.Logger) -> bool:
     """Login to GitHub CLI using token from /dev/shm/mcp-token."""
+    # If GITHUB_TOKEN env var is already set, gh CLI uses it automatically —
+    # no need to run 'gh auth login' which would conflict and print a warning.
+    if os.environ.get("GITHUB_TOKEN"):
+        logger.debug("GitHub already authenticated via GITHUB_TOKEN env var — skipping gh auth login")
+        return True
+
     token = get_github_token()
     
     if not token:
