@@ -1,3 +1,5 @@
+![Phantom Cover](cover_photo.png)
+
 # Phantom 👻
 
 **An autonomous browser automation agent powered by Claude Code and Playwright.**
