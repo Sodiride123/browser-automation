@@ -19,6 +19,7 @@ cd "$SCRIPT_DIR"
 CHANNEL=""
 AGENT=""
 NO_START=false
+NON_INTERACTIVE=false
 
 # --- Parse arguments --------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
         --channel|-c)   CHANNEL="$2"; shift 2 ;;
         --agent|-a)     AGENT="$2"; shift 2 ;;
         --no-start)     NO_START=true; shift ;;
+        --yes|-y)       NON_INTERACTIVE=true; shift ;;
         --help|-h)
             echo "Usage: bash stage2_configure.sh [OPTIONS]"
             echo ""
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --channel, -c CHANNEL   Slack channel (e.g., '#my-channel')"
             echo "  --agent, -a AGENT       Agent name (e.g., 'phantom')"
             echo "  --no-start              Don't start orchestrator after setup"
+            echo "  --yes, -y               Non-interactive mode (skip all prompts)"
             echo "  --help, -h              Show this help"
             exit 0
             ;;
@@ -135,18 +138,32 @@ else
     echo "     Output: ${SCOPE_OUTPUT:0:200}"
 fi
 
+# Auto-enable non-interactive if both channel and agent are provided
+if [ -n "$CHANNEL" ] && [ -n "$AGENT" ]; then
+    NON_INTERACTIVE=true
+fi
+
 # Prompt for channel if not provided
 if [ -z "$CHANNEL" ]; then
+    if [ "$NON_INTERACTIVE" = true ]; then
+        echo "  ❌ --channel is required in non-interactive mode"
+        exit 1
+    fi
     echo ""
     read -rp "  Enter Slack channel (e.g., #browser-automation-test): " CHANNEL
 fi
 
 # Prompt for agent if not provided
 if [ -z "$AGENT" ]; then
-    echo ""
-    echo "  Available agents: phantom, nova, pixel, bolt, scout"
-    read -rp "  Enter agent name (default: phantom): " AGENT
-    AGENT="${AGENT:-phantom}"
+    if [ "$NON_INTERACTIVE" = true ]; then
+        AGENT="phantom"
+        echo "  ℹ️  Defaulting agent to: phantom"
+    else
+        echo ""
+        echo "  Available agents: phantom, nova, pixel, bolt, scout"
+        read -rp "  Enter agent name (default: phantom): " AGENT
+        AGENT="${AGENT:-phantom}"
+    fi
 fi
 
 # Set channel and agent
@@ -177,17 +194,21 @@ echo ""
 echo "  Verifying message access..."
 READ_OUTPUT=$(python3 slack_interface.py read --limit 1 2>&1) || true
 if echo "$READ_OUTPUT" | grep -qi "no messages\|empty\|0 messages"; then
-    echo "  ⚠️  Bot cannot read messages from $CHANNEL"
-    echo "     Please run this in Slack: /invite @superninja"
-    echo ""
-    read -rp "  Press Enter after inviting the bot (or 's' to skip): " SKIP_VERIFY
-    if [ "$SKIP_VERIFY" != "s" ]; then
-        READ_OUTPUT=$(python3 slack_interface.py read --limit 1 2>&1) || true
-        if echo "$READ_OUTPUT" | grep -qi "no messages\|empty\|0 messages"; then
-            echo "  ⚠️  Still no messages — continuing anyway."
-        else
-            echo "  ✅ Bot can read messages from $CHANNEL"
+    echo "  ⚠️  Bot may not have access to $CHANNEL"
+    echo "     If needed, run in Slack: /invite @superninja"
+    if [ "$NON_INTERACTIVE" = false ]; then
+        echo ""
+        read -rp "  Press Enter after inviting the bot (or 's' to skip): " SKIP_VERIFY
+        if [ "$SKIP_VERIFY" != "s" ]; then
+            READ_OUTPUT=$(python3 slack_interface.py read --limit 1 2>&1) || true
+            if echo "$READ_OUTPUT" | grep -qi "no messages\|empty\|0 messages"; then
+                echo "  ⚠️  Still no messages — continuing anyway."
+            else
+                echo "  ✅ Bot can read messages from $CHANNEL"
+            fi
         fi
+    else
+        echo "  ℹ️  Skipping prompt (non-interactive) — continuing anyway."
     fi
 elif echo "$READ_OUTPUT" | grep -qi "ratelimit\|429"; then
     echo "  ⚠️  Rate limited — Slack access will work once rate limit clears"
