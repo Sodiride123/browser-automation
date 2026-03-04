@@ -119,9 +119,11 @@ browser-automation/
 **Work loop architecture:**
 ```
 Main Process
-  ├── Process 1 (Work): Repeatedly calls Claude Code with "check Slack, do work"
-  └── Process 2 (Monitor): Runs monitor.py (Slack watcher)
+  ├── Process 1 (Work): Runs Claude Code for initialization tasks (does NOT read Slack)
+  └── Process 2 (Monitor): Runs monitor.py — exclusive Slack watcher, batches mentions → Claude
 ```
+
+> **Important:** The Monitor process is the sole Slack listener. The Work process handles initialization (reading spec, verifying connectivity, updating memory) but never polls Slack for messages. This prevents duplicate replies. When the Monitor detects a mention, it invokes Claude Code separately via `claude-wrapper.sh` with a batched prompt.
 
 **Key configs:**
 - Lock file: `.orchestrator.lock` (PID + heartbeat, 10-min staleness timeout)

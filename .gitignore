@@ -86,3 +86,6 @@ phantom_task.py
 phantom/psiphon-tunnel-core
 phantom/psiphon_data/
 phantom/remote_server_list*
+.config/
+.monitor.lock
+.orchestrator.lock

@@ -5,6 +5,7 @@ export HOME=/root
 export PATH="/usr/local/bin:$PATH"
 export USER=root
 export TERM=xterm-256color
+unset CLAUDECODE
 
 # Settings file location
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

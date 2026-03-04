@@ -88,11 +88,20 @@ EOF
 
     # --- Force VNC to run without password ---
     # The platform may start x11vnc with -rfbauth before install.sh runs.
-    # Our supervisord config uses -nopw, but the old process persists.
-    # Fix: remove the password file and restart VNC services.
+    # Fix: remove password files AND patch the platform's supervisor config
+    # to use -nopw instead of -rfbauth, so it persists across restarts.
     echo "▶ Configuring VNC (no password)..."
-    rm -f /root/.vnc/passwd 2>/dev/null || true
+    rm -f /root/.vnc/passwd /root/.vnc/password.txt 2>/dev/null || true
     mkdir -p /root/.vnc
+
+    # Patch platform's supervisord.conf to replace -rfbauth with -nopw
+    PLATFORM_SUPERVISOR="/etc/supervisor/conf.d/supervisord.conf"
+    if [ -f "$PLATFORM_SUPERVISOR" ] && grep -q "rfbauth" "$PLATFORM_SUPERVISOR"; then
+        sed -i 's/-rfbauth [^ ]*/-nopw/g' "$PLATFORM_SUPERVISOR"
+        echo "  ✓ Patched platform supervisord.conf (rfbauth → nopw)"
+        supervisorctl reread 2>/dev/null || true
+        supervisorctl update 2>/dev/null || true
+    fi
 
     # Kill any pre-existing x11vnc/novnc that the platform started
     pkill -f "x11vnc" 2>/dev/null || true

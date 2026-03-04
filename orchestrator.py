@@ -20,6 +20,7 @@ import shutil
 import logging
 import re
 import string
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -381,6 +382,47 @@ def check_single_instance():
         _early_logger.warning(f"Could not create lock file: {e}")
 
 
+def kill_orphan_monitors(logger: logging.Logger = None):
+    """
+    Kill any orphan monitor.py processes from previous orchestrator runs.
+    Also removes stale .monitor.lock file.
+    Called before starting a new monitor to prevent duplicate Slack responses.
+    """
+    import signal as sig
+
+    monitor_lock = REPO_ROOT / ".monitor.lock"
+
+    killed = []
+    try:
+        # Find all monitor.py processes (exclude self)
+        result = subprocess.run(
+            ["pgrep", "-f", "python.*monitor\\.py"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.stdout.strip():
+            for pid_str in result.stdout.strip().split("\n"):
+                pid = int(pid_str.strip())
+                if pid == os.getpid():
+                    continue
+                try:
+                    os.kill(pid, sig.SIGTERM)
+                    killed.append(pid)
+                except OSError:
+                    pass
+    except (subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+        pass
+
+    # Remove stale monitor lock
+    if monitor_lock.exists():
+        try:
+            monitor_lock.unlink()
+        except IOError:
+            pass
+
+    if killed and logger:
+        logger.info(f"🧹 Killed {len(killed)} orphan monitor process(es): {killed}")
+
+
 def update_lock_file(agent_name: str = None):
     """Update the lock file with the agent name and refresh heartbeat."""
     if LOCK_FILE.exists():
@@ -479,7 +521,7 @@ def build_prompt(agent: dict, task: str = "") -> str:
     # Get default channel from config
     config = load_config()
     channel = config.get("default_channel_name", config.get("default_channel", "#your-channel"))
-    default_task = f"Check Slack {channel} for new requests, do your work, update your memory file."
+    default_task = f"Read your spec and documentation files, verify browser and Slack connectivity, and update your memory file. Do NOT read Slack for new messages or respond to any — the monitor process handles all Slack message detection and will invoke you separately when needed."
     
     memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
     
@@ -540,11 +582,13 @@ You are running in **headless CLI mode** — there is no human at the terminal.
 
 **Workflow:**
 1. Read your spec file first: `cat agent-docs/{agent['spec']}`
-2. Read Slack for new requests or context
-3. Do your work (browser tasks, research, screenshots, data extraction)
+2. Verify browser and Slack connectivity
+3. If given a specific task, do your work (browser tasks, research, screenshots, data extraction)
 4. Post results to Slack (short messages, attach screenshots/files)
 5. Commit any code changes to git
 6. Update your memory file (`memory/{agent['name'].lower()}_memory.md`)
+
+**IMPORTANT:** Do NOT read Slack for new messages or respond to messages on your own. The monitor process handles Slack polling and will invoke you with specific messages when needed.
 
 ---
 
@@ -810,14 +854,17 @@ Configuration:
     else:
         import multiprocessing
 
-        work_task = "Check Slack for new requests, do your work, update your memory file."
+        work_task = "Read your spec and documentation files, verify browser and Slack connectivity, and update your memory file. Do NOT read Slack for new messages or respond to any — the monitor process handles all Slack message detection and will invoke you separately when needed."
 
         def run_monitor():
-            """Run monitor.py in a subprocess."""
+            """Run monitor.py in a subprocess with unbuffered output."""
             subprocess.run(
-                ["python", "monitor.py"],
+                ["python", "-u", "monitor.py"],
                 cwd=str(REPO_ROOT),
             )
+
+        # Kill any orphan monitors from previous runs before starting fresh
+        kill_orphan_monitors(logger)
 
         logger.info("🚀 Starting two parallel processes...")
         logger.info("   Process 1: Work mode (Claude agent)")

@@ -5,7 +5,7 @@ Entry point: runs Phantom through the orchestrator (Claude Code via claude-wrapp
 Ensures the persistent browser server is running before starting.
 
 Usage:
-    python -m phantom                          # Default: check Slack, do work
+    python -m phantom                          # Default: initialize and verify connectivity
     python -m phantom "Go to google.com..."    # Run a specific task
 """
 import sys

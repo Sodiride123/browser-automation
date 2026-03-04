@@ -6,22 +6,40 @@ This document defines the communication standards and protocols for agent intera
 
 ## 🚨 CRITICAL: Workflow
 
+### Dual-Process Architecture
+
+The orchestrator runs **two parallel processes**:
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     TASK EXECUTION PROTOCOL                              │
+│                     ORCHESTRATOR (orchestrator.py)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│   1. Agent receives task via Slack or --task flag                        │
-│   2. Agent reads spec: cat agent-docs/PHANTOM_SPEC.md                   │
-│   3. Agent executes task using browser toolkit                           │
-│   4. Agent reports results back to Slack                                 │
-│   5. Agent updates memory: memory/phantom_memory.md                     │
+│   Process 1 (Work):                                                      │
+│     - Reads spec, verifies browser/Slack connectivity                   │
+│     - Does NOT read Slack for messages (Monitor handles that)           │
+│     - Updates memory file on completion                                  │
+│                                                                          │
+│   Process 2 (Monitor):                                                   │
+│     - Exclusive Slack watcher — polls every ~120s for mentions          │
+│     - Batches all pending messages into a single Claude invocation      │
+│     - Claude responds to each message via slack_interface.py            │
 │                                                                          │
 │   WAKE UP INSTRUCTION                                                    │
 │   ═══════════════════                                                    │
 │   When agent receives "WAKE UP" → Run: python orchestrator.py           │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Task Execution Flow
+
+```
+1. Monitor detects mention in Slack (or task passed via --task flag)
+2. Agent reads spec: cat agent-docs/PHANTOM_SPEC.md
+3. Agent executes task using browser toolkit
+4. Agent reports results back to Slack
+5. Agent updates memory: memory/phantom_memory.md
 ```
 
 ## Slack Interface Tool

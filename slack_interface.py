@@ -434,6 +434,8 @@ def _read_cache(name: str, ttl_seconds: int = 120) -> Optional[Any]:
     """Read from S3 cache if fresh (UTC). Returns None if stale or missing."""
     try:
         _init_s3()
+        if _s3_client is None:
+            return None
         resp = _s3_client.get_object(Bucket=_s3_bucket, Key=_s3_key(name))
         payload = json.loads(resp["Body"].read().decode("utf-8"))
         fetched_at = datetime.fromisoformat(payload["fetched_at"])
@@ -458,6 +460,8 @@ def _write_cache(name: str, data: Any, ttl_seconds: int = 120) -> None:
     """Write data to S3 cache with UTC timestamp."""
     try:
         _init_s3()
+        if _s3_client is None:
+            return
         payload = {
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "ttl_seconds": ttl_seconds,
@@ -499,6 +503,8 @@ def _read_channel_mirror(cache_key: str) -> Optional[List[Dict]]:
     """
     try:
         _init_s3()
+        if _s3_client is None:
+            return None
         resp = _s3_client.get_object(Bucket=_s3_bucket, Key=_s3_key(cache_key))
         payload = json.loads(resp["Body"].read().decode("utf-8"))
         return payload.get("messages", [])
@@ -1235,6 +1241,13 @@ class SlackClient:
         cached = _read_channel_mirror(cache_key)
         if cached is not None:
             return cached[:limit]
+        # Fallback: call Slack API directly when S3 cache is unavailable
+        try:
+            result = self._api_call("conversations.history", token, {"channel": channel, "limit": limit})
+            if result.get("ok"):
+                return result.get("messages", [])
+        except Exception as e:
+            logging.debug(f"Slack API fallback failed for channel history: {e}")
         return []
     
     def get_thread_replies(self, token: str, channel: str, thread_ts: str, limit: int = 50) -> List[Dict]:
@@ -1267,6 +1280,15 @@ class SlackClient:
         cached = _read_channel_mirror(cache_key)
         if cached is not None:
             return cached[:limit]
+        # Fallback: call Slack API directly when S3 cache is unavailable
+        try:
+            result = self._api_call("conversations.replies", token, {
+                "channel": channel, "ts": thread_ts, "limit": limit
+            })
+            if result.get("ok"):
+                return result.get("messages", [])
+        except Exception as e:
+            logging.debug(f"Slack API fallback failed for thread replies: {e}")
         return []
     
     def send_message(self, token: str, channel: str, text: str, 
@@ -1929,16 +1951,18 @@ def cmd_read(client: SlackClient, tokens: SlackTokens, args) -> None:
 
 
 def cmd_upload(client: SlackClient, tokens: SlackTokens, args) -> None:
-    """Upload a file to a channel."""
-    config = SlackConfig.load(args.config_file)
-    
-    # Determine channel: CLI arg > config default
-    channel = None
-    if hasattr(args, 'channel') and args.channel:
-        channel = args.channel
-    else:
-        channel = config.get_default_channel()
-    
+    """Upload a file to a channel using agent identity."""
+    file_path = args.file
+    title = args.title if hasattr(args, 'title') and args.title else None
+    comment = args.message if hasattr(args, 'message') and args.message else None
+    thread = args.thread if hasattr(args, 'thread') else None
+    channel = args.channel if hasattr(args, 'channel') and args.channel else None
+
+    # Use SlackInterface which handles agent impersonation
+    slack = SlackInterface()
+
+    if not channel:
+        channel = slack.default_channel
     if not channel:
         print("❌ No channel specified and no default channel configured", file=sys.stderr)
         print("\n💡 To set a default channel:", file=sys.stderr)
@@ -1946,25 +1970,7 @@ def cmd_upload(client: SlackClient, tokens: SlackTokens, args) -> None:
         print("\n   Or specify channel with -c:", file=sys.stderr)
         print("   python slack_interface.py upload file.png -c '#channel'", file=sys.stderr)
         sys.exit(1)
-    
-    # Use bot token for uploads
-    token = tokens.bot_token
-    if not token:
-        print("❌ No valid token available", file=sys.stderr)
-        sys.exit(1)
-    
-    # Check for files:write scope
-    scopes = client.get_scopes(token)
-    if scopes and 'files:write' not in scopes:
-        print("⚠️ Warning: Token may not have 'files:write' scope", file=sys.stderr)
-        print("   File upload might fail. Check scopes with: python slack_interface.py scopes", file=sys.stderr)
-    
-    file_path = args.file
-    title = args.title if hasattr(args, 'title') and args.title else None
-    comment = args.message if hasattr(args, 'message') and args.message else None
-    thread = args.thread if hasattr(args, 'thread') else None
-    
-    # Show upload info
+
     channel_display = channel if channel.startswith('#') else f"ID:{channel}"
     print(f"\n📤 Uploading to {channel_display}...")
     print(f"   File: {file_path}")
@@ -1972,36 +1978,37 @@ def cmd_upload(client: SlackClient, tokens: SlackTokens, args) -> None:
         print(f"   Title: {title}")
     if comment:
         print(f"   Comment: {comment[:50]}{'...' if len(comment) > 50 else ''}")
-    
-    # Use the v2 API (files.upload is deprecated)
-    result = client.upload_file_v2(
-        token, channel, 
-        file_path=file_path,
-        title=title,
-        initial_comment=comment,
-        thread_ts=thread
-    )
-    
+
     logger = _get_logger()
-    if result.get("ok"):
-        files_info = result.get('files', [])
-        if files_info:
-            file_info = files_info[0]
+    try:
+        result = slack.upload_file(
+            file_path=file_path,
+            channel=channel,
+            title=title,
+            comment=comment,
+            thread_ts=thread,
+        )
+
+        if result.get("ok"):
             print(f"✅ File uploaded successfully!")
-            print(f"   ID: {file_info.get('id', 'N/A')}")
-            print(f"   Title: {file_info.get('title', 'N/A')}")
+            if result.get("file"):
+                file_info = result["file"]
+                print(f"   ID: {file_info.get('id', 'N/A')}")
+                print(f"   Title: {file_info.get('title', 'N/A')}")
+            logger.info(f"UPLOAD OK: {file_path} to {channel_display}")
         else:
-            print(f"✅ File uploaded successfully!")
-        logger.info(f"UPLOAD OK: {file_path} to {channel_display}")
-    else:
-        error = result.get('error', 'Unknown error')
-        print(f"❌ Failed to upload: {error}")
-        logger.error(f"UPLOAD FAILED: {file_path} to {channel_display}: {error}")
-        if error == 'missing_scope':
-            print("\n💡 The 'files:write' scope is required for file uploads.")
-            print("   Add this scope to your Slack app at: https://api.slack.com/apps")
-        elif error == 'channel_not_found':
-            print("\n💡 Channel not found. Make sure the bot is a member of the channel.")
+            error = result.get('upload_error', result.get('error', 'Unknown error'))
+            print(f"❌ Failed to upload: {error}")
+            logger.error(f"UPLOAD FAILED: {file_path} to {channel_display}: {error}")
+            if error == 'missing_scope':
+                print("\n💡 The 'files:write' scope is required for file uploads.")
+                print("   Add this scope to your Slack app at: https://api.slack.com/apps")
+            elif error == 'channel_not_found':
+                print("\n💡 Channel not found. Make sure the bot is a member of the channel.")
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ Upload failed: {e}", file=sys.stderr)
+        logger.error(f"UPLOAD FAILED: {file_path}: {e}")
         sys.exit(1)
 
 
@@ -2665,32 +2672,31 @@ class SlackInterface:
             "file": None
         }
         
-        # If no thread_ts provided, post an agent message first with the title
+        # Always post an agent message first as Phantom, then upload the file
+        # as a reply underneath. This ensures the user sees "Phantom" as the
+        # sender, not the raw bot name (e.g. "SuperNinja").
         upload_thread_ts = thread_ts
-        if not thread_ts and agent_config:
-            # Post the title message as the agent
+        if agent_config:
             message_text = f"*{file_title}*"
             if comment:
                 message_text += f"\n{comment}"
-            
-            # Use icon_url for custom avatar (don't use icon_emoji when we have custom URL)
-            # This matches the behavior in cmd_say
+
             msg_response = self.client.send_message(
                 token, channel_id, message_text,
                 username=agent_config.get("name"),
                 icon_url=agent_config.get("icon_url"),
-                icon_emoji=None  # Don't use emoji when we have custom avatar URL
+                icon_emoji=None,
+                thread_ts=thread_ts,  # Reply in thread if one was specified
             )
-            
+
             if msg_response.get("ok"):
-                upload_thread_ts = msg_response.get("ts")
-                result["message_ts"] = upload_thread_ts
+                # Upload the file as a reply to the agent's message
+                upload_thread_ts = msg_response.get("ts") if not thread_ts else thread_ts
+                result["message_ts"] = msg_response.get("ts")
             else:
-                # If message fails, still try to upload the file
                 result["message_error"] = msg_response.get("error")
-        
-        # Upload the file (as a reply if we have a thread_ts)
-        # Always use V2 API (legacy files.upload is deprecated)
+
+        # Upload the file as a thread reply (less prominent than the agent message)
         upload_response = self.client.upload_file_v2(
             token, channel_id,
             file_path=file_path,

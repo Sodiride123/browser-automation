@@ -55,6 +55,7 @@ Phantom is a browser automation agent that receives tasks via Slack, executes th
 
 - **Persistent Browser**: Chromium runs as a background server on port 9222. Tasks connect via CDP — tabs, cookies, and state survive across tasks.
 - **Claude Code as Brain**: No hardcoded agent loop. Claude Code reads the spec, plans, and calls observer/actions directly.
+- **Dual-Process Architecture**: The orchestrator runs two parallel processes — a **Work** process (initialization and task execution) and a **Monitor** process (exclusive Slack listener). Only the Monitor polls Slack for mentions, preventing duplicate responses.
 - **Self-Healing Selectors**: Actions module tries multiple selector strategies (ID, text, aria, CSS) and falls back automatically.
 - **Set-of-Mark (SoM) Labels**: Observer overlays numbered labels on interactive elements for reliable element targeting.
 

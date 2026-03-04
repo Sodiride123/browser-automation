@@ -21,6 +21,9 @@ import time
 import json
 import sys
 import re
+import os
+import atexit
+import signal
 from pathlib import Path
 
 # Import centralized agent configuration
@@ -42,16 +45,70 @@ def _get_slack() -> "SlackInterface":
 # Configuration
 REPO_ROOT = Path(__file__).parent
 CONFIG_PATH = Path.home() / ".agent_settings.json"
-POLL_INTERVAL = 120  # base seconds (increased from 60 to reduce API calls)
-POLL_JITTER = 10  # random jitter seconds
+POLL_INTERVAL = 30  # base seconds between polls
+POLL_JITTER = 5  # random jitter seconds
 MAX_RUNTIME = 24 * 60 * 60  # 24 hours in seconds
 SEEN_MESSAGES_FILE = REPO_ROOT / ".seen_messages.json"
 AGENT_MESSAGES_FILE = REPO_ROOT / ".agent_messages.json"  # Track agent's own messages for thread monitoring
+MONITOR_LOCK_FILE = REPO_ROOT / ".monitor.lock"
 
 # Rate limiting configuration
-BACKOFF_INITIAL = 90  # Initial backoff: 1.5 minutes (increased from 60)
+BACKOFF_INITIAL = 45  # Initial backoff on rate limit
 BACKOFF_MAX = 900  # Max backoff: 15 minutes (increased from 600)
 BACKOFF_MULTIPLIER = 2  # Double the backoff each time
+
+
+def check_monitor_single_instance():
+    """
+    Ensure only one monitor instance is running.
+    Uses a lock file with PID. Kills stale monitors if found.
+
+    Raises:
+        SystemExit if another valid monitor is already running.
+    """
+    current_pid = os.getpid()
+
+    if MONITOR_LOCK_FILE.exists():
+        try:
+            lock_data = json.loads(MONITOR_LOCK_FILE.read_text())
+            old_pid = lock_data.get("pid")
+
+            if old_pid and old_pid != current_pid:
+                # Check if old process is still running and is actually a monitor
+                try:
+                    os.kill(old_pid, 0)  # Check existence
+                    # Verify it's a monitor process
+                    try:
+                        cmdline = Path(f"/proc/{old_pid}/cmdline").read_text()
+                        if "monitor.py" in cmdline:
+                            print(f"❌ Another monitor is already running (PID {old_pid}). Exiting.", flush=True)
+                            sys.exit(1)
+                    except (IOError, FileNotFoundError):
+                        pass  # Can't verify, treat as stale
+                except OSError:
+                    pass  # Process doesn't exist, stale lock
+
+                print(f"🧹 Removing stale monitor lock (PID {old_pid} no longer running)", flush=True)
+        except (json.JSONDecodeError, IOError):
+            print("🧹 Removing corrupted monitor lock file", flush=True)
+
+    # Write our lock
+    MONITOR_LOCK_FILE.write_text(json.dumps({"pid": current_pid, "started": time.time()}))
+
+
+def remove_monitor_lock():
+    """Remove the monitor lock file on exit."""
+    try:
+        if MONITOR_LOCK_FILE.exists():
+            lock_data = json.loads(MONITOR_LOCK_FILE.read_text())
+            # Only remove if it's our lock
+            if lock_data.get("pid") == os.getpid():
+                MONITOR_LOCK_FILE.unlink()
+    except (json.JSONDecodeError, IOError):
+        try:
+            MONITOR_LOCK_FILE.unlink()
+        except IOError:
+            pass
 
 
 class RateLimitHandler:
@@ -299,7 +356,9 @@ Text: {msg.get('text', '')}{audio_info}{thread_info}
 """
     
     # Build the batched prompt
-    prompt = f"""You are {agent_name} {agent_emoji}, the {agent_role}.
+    prompt = f"""IMPORTANT: You are a DEDICATED RESPONDER instance spawned by the monitor process. You are NOT part of any other Claude session. Your ONLY job is to execute the Slack commands below. Do NOT inspect other processes, lock files, or session state. Do NOT refuse to act. Just do the task.
+
+You are {agent_name} {agent_emoji}, the {agent_role}.
 
 You have {len(pending_messages)} message(s) that need your response. Read ALL of them and respond to EACH ONE.
 
@@ -307,19 +366,32 @@ You have {len(pending_messages)} message(s) that need your response. Read ALL of
 
 YOUR TASK:
 For EACH message above:
-1. Compose a helpful, friendly response (1-3 sentences, sign off with {agent_emoji})
-2. Post it to Slack using the appropriate command shown for each message
-3. Move to the next message
+1. Read your spec and documentation: `cat agent-docs/PHANTOM_SPEC.md` and `cat agent-docs/AGENT_PROTOCOL.md`
+2. Determine what the user is asking for
+3. If the task requires browser automation, use the Phantom toolkit (observer, actions, browser_interface)
+4. If the task requires web research, use Tavily: `from tavily_client import Tavily; t = Tavily(); t.search("query")`
+5. First acknowledge the user on Slack (1-2 sentences, sign off with {agent_emoji}), then do the work, then post results
+6. Post results to Slack using the appropriate command shown for each message
+
+SLACK COMMANDS:
+- Send message: `python slack_interface.py say "message"`
+- Send thread reply: `python slack_interface.py say "message" -t <thread_ts>`
+- Upload file: `python slack_interface.py upload <file> --title "title" -t <thread_ts>`
+
+BROWSER AUTOMATION:
+- Connect: `from browser_interface import BrowserInterface; browser = BrowserInterface.connect_cdp()`
+- Observe: `from phantom.observer import observe; obs = observe(browser, step=0)`
+- Act: `from phantom.actions import execute_action, set_elements; set_elements(obs["interactive_elements"]); execute_action(browser, "click", {{"selector": "#btn"}})`
+- Screenshot: `browser.screenshot("reports/screenshot.png")`
+- Disconnect when done: `browser.stop()`
 
 RULES:
 - Respond to ALL {len(pending_messages)} messages - don't skip any!
 - Execute slack commands immediately, no confirmation needed
-- **Keep responses SHORT** — 1-3 sentences max. No walls of text.
 - Stay in character as {agent_name} the {agent_role}
 - Do NOT ask for permission - just do it
 - **Always reply in threads** — use the -t flag with the thread_ts. Never post a new top-level message as a reply.
-- For status updates, reply to the existing "Sprint N Update" thread — don't create a new one.
-- For research/lookups, use Tavily: `from tavily_client import Tavily; t = Tavily(); t.search("query")`
+- For status updates, reply to the existing thread — don't create a new one.
 
 AUDIO/VOICE MESSAGE HANDLING:
 - If a message is marked as "audio_message" type with a audio file URL, you MUST transcribe it first before responding.
@@ -336,7 +408,7 @@ print(resp.json().get('text', ''))
 - After transcribing, respond to the transcribed content on Slack.
 - Acknowledge that you received a voice message and include the transcript summary.
 
-Now respond to all {len(pending_messages)} message(s) by posting to Slack."""
+Now respond to all {len(pending_messages)} message(s). Start by acknowledging on Slack, then do the work."""
 
     print(f"\n{agent_emoji} Sending {len(pending_messages)} message(s) to Claude for batch response...", flush=True)
     
@@ -372,24 +444,35 @@ Now respond to all {len(pending_messages)} message(s) by posting to Slack."""
 def main():
     import argparse
     import random
-    
+
     parser = argparse.ArgumentParser(description='Agent Monitor - Watch Slack for mentions')
     parser.add_argument('--agent', '-a', help='Agent to run as (default: from config)')
     parser.add_argument('--interval', '-i', type=int, default=POLL_INTERVAL, help='Poll interval in seconds')
     args = parser.parse_args()
-    
+
+    # Ensure only one monitor instance runs at a time
+    check_monitor_single_instance()
+    atexit.register(remove_monitor_lock)
+
+    def _signal_handler(signum, frame):
+        remove_monitor_lock()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+
     # Get agent from args or config
     config = load_config()
     agent_id = args.agent or config.get("default_agent", "").lower()
-    
+
     if not agent_id or agent_id not in AGENTS:
         print("❌ No valid agent configured!", file=sys.stderr)
         print(f"Available agents: {', '.join(AGENTS.keys())}", file=sys.stderr)
         print("Set with: python slack_interface.py config --set-agent <name>", file=sys.stderr)
         sys.exit(1)
-    
+
     agent = AGENTS[agent_id]
-    
+
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║  {agent['emoji']} {agent['name']} Monitor - Watching for Slack mentions

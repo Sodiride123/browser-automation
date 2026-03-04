@@ -44,11 +44,13 @@ Replace:
 The setup script will:
 1. **Install dependencies** — Python packages, Playwright browsers, Psiphon proxy
 2. **Configure supervisord** — Starts Xvfb, x11vnc, noVNC, browser server, Psiphon, dashboard
-3. **Disable VNC password** — Kills any pre-existing password-protected VNC and restarts with no password
+3. **Disable VNC password** — Patches the platform's supervisor config (`-rfbauth` → `-nopw`), removes password files, and restarts VNC services
 4. **Check Slack tokens** — Reads from `/dev/shm/mcp-token` (provided by the NinjaTech platform)
 5. **Configure Slack** — Sets the channel and agent, auto-joins the channel
 6. **Verify connectivity** — Tests that the bot can read messages
-7. **Start the orchestrator** — Launches in background with logging
+7. **Start the orchestrator** — Launches two parallel processes:
+   - **Work process**: Initialization and task execution (does not poll Slack)
+   - **Monitor process**: Exclusive Slack listener — polls for mentions, batches them, and triggers Claude to respond
 
 ### Step 3: Verify
 
@@ -218,6 +220,30 @@ supervisorctl restart x11vnc novnc
 # Verify ports
 ss -tlnp | grep -E "5901|6080"
 ```
+
+### VNC asks for a password
+
+The platform's supervisor config may launch x11vnc with `-rfbauth` instead of `-nopw`. The `install.sh` script patches this automatically, but if it wasn't run:
+
+```bash
+# Patch the platform config
+sed -i 's/-rfbauth [^ ]*/-nopw/g' /etc/supervisor/conf.d/supervisord.conf
+rm -f /root/.vnc/passwd /root/.vnc/password.txt
+supervisorctl reread && supervisorctl update
+supervisorctl restart x11vnc novnc
+```
+
+### Claude Code fails with "nested session" error
+
+The `claude-wrapper.sh` must include `unset CLAUDECODE` before invoking Claude. This is already present in the repo. If you see this error, verify:
+
+```bash
+grep 'unset CLAUDECODE' claude-wrapper.sh
+```
+
+### Bot sends duplicate replies
+
+Ensure only the Monitor process reads Slack. The work process task in `orchestrator.py` must NOT contain instructions to read Slack for messages. The default work task should say "Do NOT read Slack for new messages."
 
 ### Browser not connecting (CDP)
 
