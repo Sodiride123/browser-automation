@@ -140,14 +140,28 @@ echo "  ✓ Channel set to: #browser-automation-test"
 # --- 5. Reload supervisord services ------------------------------------------
 echo "▶ [5/8] Starting/reloading supervisord services..."
 
+# Pre-flight: clear stale Chrome singleton locks to prevent BACKOFF crash loop
+echo "  → Clearing stale Chrome locks..."
+rm -f "$SCRIPT_DIR/phantom/browser_data/SingletonLock" \
+      "$SCRIPT_DIR/phantom/browser_data/SingletonCookie" \
+      "$SCRIPT_DIR/phantom/browser_data/SingletonSocket"
+rm -rf /tmp/org.chromium.Chromium.* 2>/dev/null || true
+pkill -9 -f "remote-debugging-port=9222" 2>/dev/null || true
+sleep 1
+echo "  ✓ Stale Chrome locks cleared"
+
 if command -v supervisorctl &>/dev/null; then
     supervisorctl reread 2>/dev/null || true
     supervisorctl update 2>/dev/null || true
 
-    # Start phantom services if not already running
+    # Start phantom services; always restart phantom_browser for a clean state
     for svc in xvfb x11vnc novnc phantom_browser psiphon agent-dashboard; do
         STATUS=$(supervisorctl status "$svc" 2>/dev/null | awk '{print $2}' || echo "UNKNOWN")
-        if [ "$STATUS" = "RUNNING" ]; then
+        if [ "$svc" = "phantom_browser" ]; then
+            # Always restart phantom_browser to ensure clean lock-free startup
+            supervisorctl restart "$svc" 2>/dev/null || supervisorctl start "$svc" 2>/dev/null || true
+            echo "  ↺ $svc: restarted (clean start)"
+        elif [ "$STATUS" = "RUNNING" ]; then
             echo "  ✓ $svc: already running"
         else
             supervisorctl start "$svc" 2>/dev/null || true
@@ -162,15 +176,31 @@ fi
 # --- 6. Wait for browser server (CDP port 9222) ------------------------------
 echo "▶ [6/8] Waiting for browser server on port 9222..."
 
-MAX_WAIT=30
+MAX_WAIT=60
 WAITED=0
+LOCK_RETRY=0
 while ! curl -sf http://localhost:9222/json/version > /dev/null 2>&1; do
     if [ $WAITED -ge $MAX_WAIT ]; then
-        echo "  ⚠ Browser server not ready after ${MAX_WAIT}s — trying manual start..."
-        cd "$SCRIPT_DIR" && python3 phantom/browser_server.py start &
-        sleep 5
+        echo "  ⚠ Browser server not ready after ${MAX_WAIT}s — giving up, orchestrator will retry"
         break
     fi
+
+    # Every 10s, check if phantom_browser is in BACKOFF (lock issue) and auto-fix
+    if [ $((WAITED % 10)) -eq 0 ] && [ $WAITED -gt 0 ]; then
+        BSTATUS=$(supervisorctl status phantom_browser 2>/dev/null | awk '{print $2}' || echo "UNKNOWN")
+        if [ "$BSTATUS" = "BACKOFF" ] || [ "$BSTATUS" = "FATAL" ]; then
+            LOCK_RETRY=$((LOCK_RETRY + 1))
+            echo "  ⚠ phantom_browser in $BSTATUS — clearing locks and retrying (attempt $LOCK_RETRY)..."
+            rm -f "$SCRIPT_DIR/phantom/browser_data/SingletonLock" \
+                  "$SCRIPT_DIR/phantom/browser_data/SingletonCookie" \
+                  "$SCRIPT_DIR/phantom/browser_data/SingletonSocket"
+            rm -rf /tmp/org.chromium.Chromium.* 2>/dev/null || true
+            pkill -9 -f "remote-debugging-port=9222" 2>/dev/null || true
+            sleep 2
+            supervisorctl start phantom_browser 2>/dev/null || true
+        fi
+    fi
+
     sleep 2
     WAITED=$((WAITED + 2))
     echo "  ... waiting (${WAITED}s)"

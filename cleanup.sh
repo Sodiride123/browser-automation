@@ -32,6 +32,17 @@ rm -rf "$SCRIPT_DIR/phantom/browser_data/"
 mkdir -p "$SCRIPT_DIR/phantom/browser_data/"
 echo "  ✓ phantom/browser_data/ cleared"
 
+# Chrome singleton lock files (stale locks cause phantom_browser BACKOFF on restart)
+rm -f "$SCRIPT_DIR/phantom/browser_data/SingletonLock" \
+      "$SCRIPT_DIR/phantom/browser_data/SingletonCookie" \
+      "$SCRIPT_DIR/phantom/browser_data/SingletonSocket"
+rm -rf /tmp/org.chromium.Chromium.* 2>/dev/null || true
+echo "  ✓ Chrome singleton locks cleared"
+
+# Kill any stale chromium processes left from previous session
+pkill -9 -f "remote-debugging-port=9222" 2>/dev/null || true
+echo "  ✓ Stale chromium processes killed"
+
 # Step-by-step screenshots from previous tasks
 rm -rf "$SCRIPT_DIR/phantom/screenshots/"
 mkdir -p "$SCRIPT_DIR/phantom/screenshots/"
