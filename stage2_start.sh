@@ -133,9 +133,10 @@ cd "$SCRIPT_DIR"
 python3 slack_interface.py config --set-agent phantom
 echo "  ✓ Agent set to: Phantom"
 
-# Set default channel
-python3 slack_interface.py config --set-channel "#browser-automation-test"
-echo "  ✓ Channel set to: #browser-automation-test"
+# Set default channel — use argument $1 if provided, else fall back to #browser-automation-test
+SLACK_CHANNEL="${1:-#browser-automation-test}"
+python3 slack_interface.py config --set-channel "$SLACK_CHANNEL"
+echo "  ✓ Channel set to: $SLACK_CHANNEL"
 
 # --- 5. Reload supervisord services ------------------------------------------
 echo "▶ [5/8] Starting/reloading supervisord services..."
