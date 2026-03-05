@@ -178,6 +178,27 @@ def start(foreground=False):
     if old_pid:
         stop()
 
+    # Clear stale Chrome singleton lock files before launching
+    # These are left behind when Chrome crashes or is killed ungracefully
+    for lock_file in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
+        lock_path = BROWSER_DATA_DIR / lock_file
+        if lock_path.exists():
+            lock_path.unlink()
+            print(f"   Cleared stale lock: {lock_file}")
+
+    # Also clear any /tmp chromium lock dirs
+    import glob
+    for tmp_dir in glob.glob("/tmp/org.chromium.Chromium.*"):
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Kill any orphaned chromium processes holding port 9222
+    subprocess.run(
+        ["pkill", "-9", "-f", f"remote-debugging-port={CDP_PORT}"],
+        capture_output=True,
+    )
+    time.sleep(1)
+
     chromium = _find_chromium()
     BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
