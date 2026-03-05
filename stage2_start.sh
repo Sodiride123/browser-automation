@@ -150,6 +150,13 @@ pkill -9 -f "remote-debugging-port=9222" 2>/dev/null || true
 sleep 1
 echo "  ✓ Stale Chrome locks cleared"
 
+# Pre-flight: kill any existing orchestrator and remove stale lock
+echo "  → Clearing stale orchestrator instances..."
+pkill -9 -f "orchestrator.py" 2>/dev/null || true
+sleep 1
+rm -f "$SCRIPT_DIR/.orchestrator.lock"
+echo "  ✓ Orchestrator lock cleared"
+
 if command -v supervisorctl &>/dev/null; then
     supervisorctl reread 2>/dev/null || true
     supervisorctl update 2>/dev/null || true
