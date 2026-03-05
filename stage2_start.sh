@@ -214,39 +214,6 @@ else
     echo "  ⚠ Browser server may not be ready — orchestrator will retry"
 fi
 
-# --- 7. Print access URLs ----------------------------------------------------
-echo "▶ [7/8] Generating access URLs..."
-
-VNC_URL=$(cd "$SCRIPT_DIR" && python3 -c "from phantom.vnc import get_vnc_url; print(get_vnc_url())" 2>/dev/null || echo "VNC URL unavailable")
-VNC_PASSWORD=$(cat ~/.vnc/password.txt 2>/dev/null || echo "no-password")
-
-# Dashboard URL via sandbox metadata
-DASHBOARD_URL=$(python3 << 'PYEOF'
-import json, re
-from pathlib import Path
-
-meta_file = Path("/dev/shm/sandbox_metadata.json")
-if meta_file.exists():
-    try:
-        data = json.loads(meta_file.read_text())
-        sandbox_id = data.get("sandbox_id", "")
-        stage = data.get("stage", "beta")
-        if sandbox_id:
-            print(f"https://9000-{sandbox_id}.app.super.{stage}myninja.ai")
-            exit()
-    except Exception:
-        pass
-print("http://localhost:9000  (expose port 9000 for public URL)")
-PYEOF
-)
-
-echo ""
-echo "  ┌─────────────────────────────────────────────────────┐"
-echo "  │  🖥️  Dashboard : $DASHBOARD_URL"
-echo "  │  👁️  VNC URL   : $VNC_URL"
-echo "  │  🔑  VNC Pass  : $VNC_PASSWORD"
-echo "  └─────────────────────────────────────────────────────┘"
-echo ""
 
 # --- 8. Post Slack notification and start orchestrator -----------------------
 echo "▶ [8/8] Starting orchestrator..."
@@ -254,30 +221,9 @@ echo "▶ [8/8] Starting orchestrator..."
 cd "$SCRIPT_DIR"
 
 # Post online notification to Slack
-python3 slack_interface.py say "👻 Phantom is online! 
-🖥️ Dashboard: $DASHBOARD_URL
-👁️ VNC: $VNC_URL" 2>/dev/null || echo "  ⚠ Slack notification failed (non-fatal)"
+python3 slack_interface.py say "👻 Phantom is online!" 
+
 
 # Start orchestrator in background (non-blocking)
 nohup python3 orchestrator.py >> /workspace/logs/orchestrator_startup.log 2>&1 &
 ORCH_PID=$!
-
-echo "  ✓ Orchestrator started (PID: $ORCH_PID)"
-echo "  📝 Logs: /workspace/logs/"
-
-echo ""
-echo "============================================================"
-echo "  ✅ Stage 2 Complete — Phantom is running!"
-echo "============================================================"
-echo ""
-echo "  Orchestrator PID : $ORCH_PID"
-echo "  Dashboard        : $DASHBOARD_URL"
-echo "  VNC              : $VNC_URL"
-echo "  VNC Password     : $VNC_PASSWORD"
-echo "  Logs             : /workspace/logs/"
-echo ""
-echo "  To check status:"
-echo "    supervisorctl status"
-echo "    python phantom/browser_server.py status"
-echo "    python phantom/session_health.py status"
-echo ""
