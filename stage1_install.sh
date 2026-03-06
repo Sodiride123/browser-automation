@@ -178,6 +178,9 @@ old_startup = '''    async def startup(self):
                 page = await self.browser.new_page()
                 print("New page created successfully")
                 self.pages.append(page)
+                # Navigate to about:blank to ensure page is ready
+                # await page.goto("google.com", timeout=30000)
+                # print("Navigated to google.com")
 
             self.current_page_index = len(self.pages) - 1
             print("Browser initialization completed successfully")
