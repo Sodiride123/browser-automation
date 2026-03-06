@@ -238,6 +238,7 @@ def start(foreground=False):
         "--disable-blink-features=AutomationControlled",
         "--enable-unsafe-swiftshader",
         "--ignore-certificate-errors",
+        "--window-size=1600,900",
         # Start with a blank tab
         "about:blank",
     ]
