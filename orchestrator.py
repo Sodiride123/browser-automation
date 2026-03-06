@@ -69,18 +69,32 @@ def setup_logging(agent_name: str = "orchestrator") -> logging.Logger:
     )
     console_formatter = logging.Formatter('%(message)s')
     
-    # File handler - daily rotating log file
+    # File handler - daily rotating log file (named after agent, e.g. phantom_2026-03-06.log)
     log_filename = LOG_DIR / f"{agent_name}_{datetime.now().strftime('%Y-%m-%d')}.log"
     file_handler = logging.FileHandler(log_filename, encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(file_formatter)
-    
+
+    # File handler - daily orchestrator log (always named orchestrator_YYYY-MM-DD.log)
+    orchestrator_daily = LOG_DIR / f"orchestrator_{datetime.now().strftime('%Y-%m-%d')}.log"
+    orchestrator_daily_handler = logging.FileHandler(orchestrator_daily, encoding='utf-8')
+    orchestrator_daily_handler.setLevel(logging.DEBUG)
+    orchestrator_daily_handler.setFormatter(file_formatter)
+
+    # File handler - persistent startup log (append mode, survives restarts)
+    orchestrator_startup = LOG_DIR / "orchestrator_startup.log"
+    orchestrator_startup_handler = logging.FileHandler(orchestrator_startup, mode='a', encoding='utf-8')
+    orchestrator_startup_handler.setLevel(logging.DEBUG)
+    orchestrator_startup_handler.setFormatter(file_formatter)
+
     # Console handler - only INFO and above
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
     
     logger.addHandler(file_handler)
+    logger.addHandler(orchestrator_daily_handler)
+    logger.addHandler(orchestrator_startup_handler)
     logger.addHandler(console_handler)
     
     return logger
