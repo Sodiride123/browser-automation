@@ -62,10 +62,20 @@ echo "  ✓ memory/phantom_memory.md reset to blank"
 # --- 🟠 Important: Logs and runtime cache ------------------------------------
 echo "▶ Removing logs and runtime cache..."
 
-# Application and orchestrator logs
+# Kill any running orchestrator BEFORE deleting its config file
+# (prevents "No agent configured" error if orchestrator is alive when .agent_settings.json is removed)
+pkill -9 -f "orchestrator.py" 2>/dev/null || true
+echo "  ✓ Stale orchestrator processes killed"
+
+# Application and orchestrator logs (repo-local logs dir)
 rm -rf "$SCRIPT_DIR/logs/"
 mkdir -p "$SCRIPT_DIR/logs/"
 echo "  ✓ logs/ cleared"
+
+# Workspace-level logs dir (used by orchestrator and slack_interface since fix)
+rm -rf /workspace/logs/
+mkdir -p /workspace/logs/
+echo "  ✓ /workspace/logs/ cleared"
 
 # Slack agent config (workspace, channel ID, cached bot token)
 rm -f /root/.agent_settings.json
@@ -105,6 +115,7 @@ echo "    🔴 phantom/screenshots/      (task screenshots)"
 echo "    🔴 phantom/psiphon_data/     (proxy tunnel state)"
 echo "    🔴 memory/phantom_memory.md  (agent memory — reset to blank)"
 echo "    🟠 logs/                     (application logs)"
+echo "    🟠 /workspace/logs/          (orchestrator & agent logs)"
 echo "    🟠 /root/.agent_settings.json (Slack workspace config)"
 echo "    🟠 .orchestrator.lock        (stale lock file)"
 echo "    🟠 settings.json             (generated API config)"

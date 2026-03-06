@@ -91,11 +91,11 @@ from functools import wraps
 
 
 # ============================================================================
-# Logging — writes to the same logs/<agent>_<date>.log as orchestrator
+# Logging — writes to /workspace/logs/<agent>_<date>.log (same as orchestrator)
 # ============================================================================
 
 REPO_ROOT = Path(__file__).parent
-LOG_DIR = REPO_ROOT / "logs"
+LOG_DIR = Path("/workspace/logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 # Module-level logger — configured lazily on first use

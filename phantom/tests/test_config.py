@@ -19,8 +19,8 @@ class TestPhantomConfig:
         assert config.max_tokens == 4096
         assert config.temperature == 0.0
         assert config.headless is False
-        assert config.viewport_width == 1280
-        assert config.viewport_height == 720
+        assert config.viewport_width == 1600
+        assert config.viewport_height == 900
         assert config.timeout == 30000
         assert config.slow_mo == 0
         assert config.proxy is None

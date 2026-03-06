@@ -29,8 +29,8 @@ class PhantomConfig:
 
     # Browser settings
     headless: bool = False
-    viewport_width: int = 1280
-    viewport_height: int = 720
+    viewport_width: int = 1600
+    viewport_height: int = 900
     timeout: int = 30000
     slow_mo: int = 0
     user_data_dir: str = str(BROWSER_DATA_DIR)
