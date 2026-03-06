@@ -174,13 +174,13 @@ class BrowserInterface:
         Without user_data_dir, each session starts with a fresh ephemeral browser.
     """
 
-    def __init__(self, headless=False, viewport_width=1280, viewport_height=720,
+    def __init__(self, headless=False, viewport_width=1600, viewport_height=900,
                  timeout=30000, slow_mo=0, user_agent=None, capture_console=True,
                  user_data_dir=None, proxy=None):
         """
         Args:
             headless: False = visible on VNC (default). True = no display.
-            viewport_width/height: Browser viewport size (default 1280x720).
+            viewport_width/height: Browser viewport size (default 1600x900).
             timeout: Default timeout for all operations in ms (default 30000).
             slow_mo: Delay between actions in ms, useful for VNC demos (default 0).
             user_agent: Custom User-Agent string (optional).
@@ -214,8 +214,8 @@ class BrowserInterface:
         self.stop(); return False
 
     @classmethod
-    def connect_cdp(cls, endpoint="http://localhost:9222", viewport_width=1280,
-                    viewport_height=720, timeout=30000, capture_console=True):
+    def connect_cdp(cls, endpoint="http://localhost:9222", viewport_width=1600,
+                    viewport_height=900, timeout=30000, capture_console=True):
         """Connect to an already-running Chromium via Chrome DevTools Protocol.
 
         This is the preferred way to use the browser in Phantom tasks.
