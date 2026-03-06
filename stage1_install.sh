@@ -117,6 +117,19 @@ if [ -d "$SUPERVISOR_CONF_DIR" ] && [ -f "$SUPERVISOR_SRC" ]; then
     cp "$SUPERVISOR_SRC" "$SUPERVISOR_CONF_DIR/phantom.conf"
     echo "  ✓ Installed phantom.conf → $SUPERVISOR_CONF_DIR"
 
+    # Disable browser_api in the platform's supervisord.conf (if present).
+    # Phantom uses its own persistent browser (phantom_browser on port 9222),
+    # so the platform's browser_api would launch a duplicate Chromium window.
+    PLATFORM_CONF="$SUPERVISOR_CONF_DIR/supervisord.conf"
+    if [ -f "$PLATFORM_CONF" ] && grep -q "\[program:browser_api\]" "$PLATFORM_CONF" 2>/dev/null; then
+        if ! grep -A1 "\[program:browser_api\]" "$PLATFORM_CONF" | grep -q "autostart=false"; then
+            sed -i '/\[program:browser_api\]/a autostart=false\nautorestart=false' "$PLATFORM_CONF"
+            echo "  ✓ Disabled browser_api in platform supervisord.conf"
+        else
+            echo "  ✓ browser_api already disabled in platform supervisord.conf"
+        fi
+    fi
+
     # Ensure main supervisord.conf has [include] section
     MAIN_CONF="/etc/supervisor/supervisord.conf"
     if ! grep -q "\[include\]" "$MAIN_CONF" 2>/dev/null; then
@@ -178,9 +191,6 @@ old_startup = '''    async def startup(self):
                 page = await self.browser.new_page()
                 print("New page created successfully")
                 self.pages.append(page)
-                # Navigate to about:blank to ensure page is ready
-                # await page.goto("google.com", timeout=30000)
-                # print("Navigated to google.com")
 
             self.current_page_index = len(self.pages) - 1
             print("Browser initialization completed successfully")
