@@ -44,7 +44,7 @@ REPO_ROOT = Path(__file__).parent
 CONFIG_PATH = Path.home() / ".agent_settings.json"
 POLL_INTERVAL = 60  # base seconds
 POLL_JITTER = 5  # random jitter seconds
-MAX_RUNTIME = 24 * 60 * 60  # 24 hours in seconds
+MAX_RUNTIME = 28 * 60  # 28 minutes in seconds to minimise the dead zone in 30 min
 SEEN_MESSAGES_FILE = REPO_ROOT / ".seen_messages.json"
 AGENT_MESSAGES_FILE = REPO_ROOT / ".agent_messages.json"  # Track agent's own messages for thread monitoring
 
