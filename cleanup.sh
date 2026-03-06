@@ -62,6 +62,11 @@ echo "  ✓ memory/phantom_memory.md reset to blank"
 # --- 🟠 Important: Logs and runtime cache ------------------------------------
 echo "▶ Removing logs and runtime cache..."
 
+# Kill any running orchestrator BEFORE deleting its config file
+# (prevents "No agent configured" error if orchestrator is alive when .agent_settings.json is removed)
+pkill -9 -f "orchestrator.py" 2>/dev/null || true
+echo "  ✓ Stale orchestrator processes killed"
+
 # Application and orchestrator logs
 rm -rf "$SCRIPT_DIR/logs/"
 mkdir -p "$SCRIPT_DIR/logs/"
