@@ -1094,6 +1094,20 @@
             // Refresh tools/prompts every 30s
             setInterval(loadTools, 30000);
             setInterval(loadPrompts, 30000);
+            // Refresh log file list every 15s (picks up new files after orchestrator restart)
+            setInterval(async () => {
+                try {
+                    const res = await fetch('/api/logs');
+                    const data = await res.json();
+                    const tabs = document.getElementById('logTabs');
+                    const currentNames = Array.from(tabs.querySelectorAll('.log-tab')).map(t => t.textContent + '.log');
+                    const newNames = data.files.map(f => f.name);
+                    // Only reload tabs if file list changed
+                    if (JSON.stringify(currentNames.sort()) !== JSON.stringify(newNames.sort())) {
+                        await loadLogFiles();
+                    }
+                } catch (e) {}
+            }, 15000);
         }
 
         init();
