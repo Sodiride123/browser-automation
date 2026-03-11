@@ -60,6 +60,9 @@ if [ -z "$GH_USER" ]; then
 fi
 ok "Authenticated as: $GH_USER"
 
+# Ensure gh is configured as git credential helper
+gh auth setup-git 2>/dev/null || true
+
 # ─────────────────────────────────────────────────────────────────
 # Step 1: Check if the repository exists on GitHub
 # ─────────────────────────────────────────────────────────────────
