@@ -19,8 +19,24 @@
 set -euo pipefail
 
 REPO_DIR="/workspace/browser-automation"
-REPO_NAME="browser-automation"
 BRANCH="status-update-from-phantom"
+ENV_FILE="$REPO_DIR/.env"
+
+# Read REPO_NAME from .env (written by stage1_install.sh)
+REPO_NAME=""
+if [ -f "$ENV_FILE" ]; then
+    REPO_NAME=$(grep "^REPO_NAME=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
+fi
+
+# Fallback: infer from git remote if .env doesn't have it
+if [ -z "$REPO_NAME" ]; then
+    REPO_NAME=$(cd "$REPO_DIR" && git remote get-url origin 2>/dev/null | sed 's|.*/||; s|\.git$||' || true)
+fi
+
+# Final fallback: use directory name
+if [ -z "$REPO_NAME" ]; then
+    REPO_NAME=$(basename "$REPO_DIR")
+fi
 
 # Colors for output
 GREEN='\033[0;32m'
