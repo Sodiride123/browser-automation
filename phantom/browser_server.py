@@ -202,8 +202,8 @@ def start(foreground=False):
     chromium = _find_chromium()
     BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Psiphon proxy (disabled — tunnel core not installed)
-    proxy_server = None
+    # Psiphon proxy (always enabled)
+    proxy_server = PSIPHON_PROXY
 
     args = [
         chromium,
