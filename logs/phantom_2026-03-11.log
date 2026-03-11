@@ -1,0 +1,9 @@
+2026-03-11 00:49:46 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: 👻 Phantom is online!
+
+2026-03-11 00:49:46 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773190186.539469
+2026-03-11 00:49:46 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: 👻 Phantom is online!
+2026-03-11 00:50:07 | INFO     | [slack] READ 1 messages from ID:C0AKC79T8CX
+2026-03-11 00:50:14 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: 👻 Phantom is online and ready. Browser is running with CDP on port 9222. Waiting for tasks — drop a request here or mention me.
+
+2026-03-11 00:50:14 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773190214.464679
+2026-03-11 00:50:14 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: 👻 Phantom is online and ready. Browser is running with CDP on port 9222. Waiting for tasks — drop a request here or mention me.

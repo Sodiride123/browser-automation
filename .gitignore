@@ -45,10 +45,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
 # Temporary files
 *.tmp
 *.temp
@@ -78,7 +74,7 @@ phantom/browser_data/
 # Browser server PID file
 phantom/.browser_server.pid
 
-# Screenshots (generated at runtime)
+# Screenshots (generated at runtime — large binary files)
 phantom/screenshots/
 
 # Ad-hoc task scripts
@@ -86,3 +82,17 @@ phantom_task.py
 phantom/psiphon-tunnel-core
 phantom/psiphon_data/
 phantom/remote_server_list*
+
+# Reports (task output artifacts)
+reports/
+
+# ============================================================
+# EXPLICITLY TRACKED (do NOT ignore these):
+#   - logs/              → operational logs, committed for history
+#   - memory/            → agent memory, committed for history
+#   - *.log files inside logs/ are tracked (override below)
+# ============================================================
+!logs/
+!logs/**
+!memory/
+!memory/**
