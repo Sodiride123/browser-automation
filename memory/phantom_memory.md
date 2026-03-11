@@ -1,24 +1,33 @@
 # Phantom Memory
 
 ## Session History
-- **2026-03-11 ~02:00 UTC**: Searched for best cafes in Sydney CBD. Used Google search via browser + Tavily. Posted top 10 recommendations.
-- **2026-03-11 ~03:35 UTC**: Handled multiple requests — cafes search (DuckDuckGo), MacBook Air M5 pricing (Apple AU store), Sydney tourist spots, OpenAI models search. Declined Gmail login request (security).
-- **2026-03-11 ~04:00 UTC**: Corrected VNC URL — it IS publicly accessible via `get_vnc_url()`. Posted correction to Slack.
-- **2026-03-11 ~04:10 UTC**: Woke up, checked Slack. No new user requests. All caught up.
+- **2026-03-11 (session 1)**: Came online. Browser running (Chrome 145, CDP port 9222). Searched for best cafes in Sydney CBD using Google and Time Out. Compiled top 10 list and posted to Slack with screenshot. Answered questions about MacBook Air prices, Sydney tourist spots, OpenAI models. User requested VNC link but was incorrectly told it was localhost-only.
+- **2026-03-11 (session 2)**: Corrected VNC URL — it IS publicly accessible. Shared link with channel. No new user requests pending at session start.
+- **2026-03-11 (session 3)**: Responded to 10 pending messages. Searched "anthropic models" on Google via browser and uploaded screenshot. Fixed browser proxy issue (Psiphon was configured but not running). Replied to Gmail request thread (declined — irreversible action on user's behalf). Explained memory system to user.
 
 ## Known Sites
-- **Google Search**: May trigger CAPTCHA from server IP (54.185.194.204). Use DuckDuckGo as fallback.
-- **DuckDuckGo**: Reliable for searches, includes AI-generated summaries. No CAPTCHA issues.
-- **Apple AU Store**: Direct browsing works well. Pricing pages load fine.
-- **Tavily**: May get HTTP 403 errors (key access denied). Browser search is a reliable fallback.
+- **Google Search**: Works well when proxy is not interfering. Rate-limits after many rapid goto() calls in same session.
+- **Broadsheet (broadsheet.com.au)**: Returns 403 Forbidden — blocks automated browsers.
+- **Time Out (timeout.com)**: Works well, has cookie overlay that needs dismissal.
+- **DuckDuckGo**: Can trigger CAPTCHA ("bots use DuckDuckGo too") — shows image challenge to select ducks.
 
-## Important Learnings
-- **VNC URL IS public**: `get_vnc_url()` returns a publicly accessible URL. Always share this when users ask to see the browser.
-- **Don't say VNC is localhost-only** — it's tunneled and publicly accessible.
-- **VNC URL changes between sessions**: The sandbox ID in the URL changes on restart. ALWAYS call `get_vnc_url()` fresh — never reuse a cached/old URL.
-- **Gmail/personal account login**: Decline these requests for security reasons.
+## Debugging Notes
+- Import is `from browser_interface import BrowserInterface` (NOT `from phantom.browser_interface`)
+- `BrowserInterface.new_tab()` may return None — use `browser.context.new_page()` instead
+- After many navigations, browser may hit ERR_BLOCKED_BY_RESPONSE on search engines. May need to restart browser or wait.
+- Always use `connect_cdp()` not `BrowserInterface().start()`
+- **VNC URL IS publicly accessible** — always share when asked. Get via `from phantom.vnc import get_vnc_url; get_vnc_url()`
+- **Psiphon proxy**: Was previously "always enabled" but tunnel core is not installed. Code now sets proxy_server=None. If browser shows ERR_PROXY_CONNECTION_FAILED, it was started with old config — restart it.
+- When browser is started with proxy but Psiphon isn't running, ALL navigations fail with ERR_PROXY_CONNECTION_FAILED. Fix: restart browser (proxy is now disabled in code).
 
-## Notes
-- Default Slack channel: #test_phantom2 (C0AKC79T8CX)
-- Agent identity configured as `phantom`
-- Browser: Chrome on CDP port 9222, persistent tabs
+## Configuration
+- Slack channel: #test_phantom2 (C0AKC79T8CX)
+- Workspace: RenovateAI
+- Agent: phantom
+- Browser: Chrome/145.0.7632.6, CDP on localhost:9222
+- VNC: https://6080-bc093390-546f-4631-bea9-035ce3282665.app.super.betamyninja.ai/vnc.html?autoconnect=true (user-corrected URL)
+
+## User Preferences
+- User (U0AJT85NKB3) likes using the browser for searches and wants screenshots
+- User asked for VNC URL multiple times — always share it proactively
+- User tried to get Gmail email sent — declined as irreversible action affecting others
