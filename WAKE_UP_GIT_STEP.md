@@ -8,6 +8,36 @@ This ensures that code, logs, and memory changes are committed and pushed to the
 
 ---
 
+## Session Configuration via `.env`
+
+The `stage1_install.sh` script accepts two optional arguments that are saved to `.env`:
+
+```bash
+bash /workspace/browser-automation/stage1_install.sh \
+    --slack-channel "#test_phantom2" \
+    --repo-name "browser-automation"
+```
+
+This writes `/workspace/browser-automation/.env`:
+```
+SLACK_CHANNEL="#test_phantom2"
+REPO_NAME="browser-automation"
+```
+
+Both `git_auto_commit.sh` and `stage2_start.sh` read from this file automatically — no hardcoded values.
+
+**Priority chain for REPO_NAME:**
+1. `.env` file (written by `stage1_install.sh --repo-name`)
+2. Git remote URL (inferred from `origin`)
+3. Directory name (final fallback)
+
+**Priority chain for SLACK_CHANNEL:**
+1. `$1` argument to `stage2_start.sh` (explicit override)
+2. `.env` file (written by `stage1_install.sh --slack-channel`)
+3. `#browser-automation-test` (hardcoded fallback)
+
+---
+
 ## Updated WAKE UP Schedule
 
 ```
@@ -29,12 +59,13 @@ Important: do not send any message in Slack for the "WAKE UP"
 ## What the Script Does
 
 1. **Checks GitHub authentication** — if the user hasn't connected GitHub, it skips silently
-2. **Checks if the repo exists** — creates it if missing
-3. **Checks if `status-update-from-phantom` branch exists** — creates it if missing
-4. **Stages all changes** (respecting `.gitignore` — excludes cache, includes code/logs/memory)
-5. **Checks for actual differences** — if nothing changed, skips commit
-6. **Generates a commit message** from the diff summary (categorized by code/logs/memory/config)
-7. **Commits and pushes** to `origin/status-update-from-phantom`
+2. **Reads REPO_NAME from `.env`** — falls back to git remote or directory name
+3. **Checks if the repo exists** — creates it if missing
+4. **Checks if `status-update-from-phantom` branch exists** — creates it if missing
+5. **Stages all changes** (respecting `.gitignore` — excludes cache, includes code/logs/memory)
+6. **Checks for actual differences** — if nothing changed, skips commit
+7. **Generates a commit message** from the diff summary (categorized by code/logs/memory/config)
+8. **Commits and pushes** to `origin/status-update-from-phantom`
 
 ---
 
@@ -60,8 +91,8 @@ Important: do not send any message in Slack for the "WAKE UP"
 - `reports/` — task output artifacts
 - `.orchestrator.lock` — runtime lock file
 - `settings.json` — auto-generated API config
+- `.env` — session-specific config (contains no secrets, but is sandbox-specific)
 - Token/secret files — security sensitive
-- `.env` files — environment variables
 
 ---
 
