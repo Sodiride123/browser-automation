@@ -573,7 +573,7 @@ Update this after each task with what you learned about the sites you visited.
 5. **Use the accessibility tree** — it's more reliable than screenshots for understanding page structure
 6. **Prefer stable selectors** — #id > aria-label > name > text > class
 7. **Don't over-extract** — if you can see the answer in the a11y tree, call it done
-8. **Share VNC link** — let humans watch when doing visual tasks
+8. **Share VNC link** — let humans watch when doing visual tasks. **NEVER hardcode or cache VNC URLs** — always call `get_vnc_url()` fresh or use shell expansion `$(python3 -c 'from phantom.vnc import get_vnc_url; print(get_vnc_url())')` in Slack commands. The sandbox ID changes on restart, so old URLs go stale.
 9. **Report errors immediately** — don't silently retry forever
 10. **Update memory** — record what you learned about sites for next time
 11. **Keep Slack messages short** — 2-4 sentences, include screenshots
