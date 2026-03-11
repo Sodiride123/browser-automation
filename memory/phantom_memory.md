@@ -17,8 +17,8 @@
 - After many navigations, browser may hit ERR_BLOCKED_BY_RESPONSE on search engines. May need to restart browser or wait.
 - Always use `connect_cdp()` not `BrowserInterface().start()`
 - **VNC URL IS publicly accessible** — always share when asked. Get via `from phantom.vnc import get_vnc_url; get_vnc_url()`
+- **VNC URL was wrong because /dev/shm/sandbox_metadata.json had stale thread_id**. Fixed by updating to correct ID (bc093390-...). If URL is ever wrong again, check this file first.
 - **Psiphon proxy**: Was previously "always enabled" but tunnel core is not installed. Code now sets proxy_server=None. If browser shows ERR_PROXY_CONNECTION_FAILED, it was started with old config — restart it.
-- When browser is started with proxy but Psiphon isn't running, ALL navigations fail with ERR_PROXY_CONNECTION_FAILED. Fix: restart browser (proxy is now disabled in code).
 
 ## Configuration
 - Slack channel: #test_phantom2 (C0AKC79T8CX)
