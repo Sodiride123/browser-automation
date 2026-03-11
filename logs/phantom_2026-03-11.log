@@ -1,9 +1,23 @@
-2026-03-11 00:49:46 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: 👻 Phantom is online!
+2026-03-11 01:59:06 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: 👻 Phantom is online!
 
-2026-03-11 00:49:46 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773190186.539469
-2026-03-11 00:49:46 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: 👻 Phantom is online!
-2026-03-11 00:50:07 | INFO     | [slack] READ 1 messages from ID:C0AKC79T8CX
-2026-03-11 00:50:14 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: 👻 Phantom is online and ready. Browser is running with CDP on port 9222. Waiting for tasks — drop a request here or mention me.
+2026-03-11 01:59:06 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773194346.951849
+2026-03-11 01:59:06 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: 👻 Phantom is online!
+2026-03-11 01:59:20 | INFO     | [slack] READ 3 messages from ID:C0AKC79T8CX
+2026-03-11 01:59:28 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: 👻 Phantom is online! Browser is running (Chrome 145, CDP on port 9222, 2 tabs open). Ready for tasks — drop a request here or mention me.
 
-2026-03-11 00:50:14 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773190214.464679
-2026-03-11 00:50:14 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: 👻 Phantom is online and ready. Browser is running with CDP on port 9222. Waiting for tasks — drop a request here or mention me.
+2026-03-11 01:59:29 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773194369.051309
+2026-03-11 01:59:29 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: 👻 Phantom is online! Browser is running (Chrome 145, CDP on port 9222, 2 tabs open). Ready for tasks — drop a request here or mention me.
+2026-03-11 02:03:42 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: On it! Searching for the best cafes in Sydney CBD now. I'll use both web research and my browser to get you solid recommendations. 👻
+
+2026-03-11 02:03:42 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773194622.949929
+2026-03-11 02:03:42 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: On it\! Searching for the best cafes in Sydney CBD now. I'll use both web research and my browser to get you solid recommendations. 👻
+2026-03-11 02:08:26 | INFO     | [slack] MSG SENDING [Phantom → C0AKC79T8CX]: Here's what I found browsing for the best cafes in Sydney CBD:
+_Top Picks (Google + Time Out + Tripadvisor):_
+:coffee: _La Famiglia Cafe_ — 4.8★ (663 reviews), $1–20. "Brilliant team serving top coffe...
+2026-03-11 02:08:26 | INFO     | [slack] MSG SENT [Phantom → C0AKC79T8CX] ts=1773194906.492269
+2026-03-11 02:08:26 | INFO     | [slack] MSG SENT as Phantom to ID:C0AKC79T8CX: Here's what I found browsing for the best cafes in Sydney CBD:
+
+*Top Picks (Google + Time Out + Tripadvisor):*
+
+:coffee: *La Famiglia Cafe* — 4.8★ (663 reviews), $1–20. "Brilliant team serving top cof...
+2026-03-11 02:08:33 | INFO     | [slack] UPLOAD OK: /workspace/browser-automation/phantom/screenshots/step_003.png to ID:C0AKC79T8CX
