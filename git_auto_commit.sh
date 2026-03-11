@@ -64,14 +64,35 @@ echo ""
 log "Checking GitHub authentication..."
 
 if ! gh auth status &>/dev/null; then
-    warn "GitHub not authenticated — skipping commit & push"
-    warn "User has not connected their GitHub account"
+    echo ""
+    echo "============================================================"
+    echo "  ⏭  Git Auto-Commit — Skipped"
+    echo "============================================================"
+    echo "  GitHub is not connected. The user has not linked their"
+    echo "  GitHub account to this session."
+    echo ""
+    echo "  To connect GitHub, click the 'Connect' button in the"
+    echo "  chat interface, or ensure /dev/shm/mcp-token contains"
+    echo "  a valid GitHub token."
+    echo ""
+    echo "  Commit and push will be skipped for this cycle."
+    echo "============================================================"
+    echo ""
     exit 1
 fi
 
 GH_USER=$(gh api user --jq '.login' 2>/dev/null || echo "")
 if [ -z "$GH_USER" ]; then
-    warn "Could not determine GitHub username — skipping"
+    echo ""
+    echo "============================================================"
+    echo "  ⏭  Git Auto-Commit — Skipped"
+    echo "============================================================"
+    echo "  GitHub is authenticated but the username could not be"
+    echo "  determined. This may be a transient API error."
+    echo ""
+    echo "  Commit and push will be skipped for this cycle."
+    echo "============================================================"
+    echo ""
     exit 1
 fi
 ok "Authenticated as: $GH_USER"
