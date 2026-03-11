@@ -170,10 +170,10 @@ FILES_CHANGED=$(git diff --cached --name-only 2>/dev/null)
 NUM_FILES=$(echo "$FILES_CHANGED" | wc -l | tr -d ' ')
 
 # Categorize changes
-LOGS_CHANGED=$(echo "$FILES_CHANGED" | grep -c "^logs/" 2>/dev/null || echo "0")
-MEMORY_CHANGED=$(echo "$FILES_CHANGED" | grep -c "^memory/" 2>/dev/null || echo "0")
-CODE_CHANGED=$(echo "$FILES_CHANGED" | grep -cE "\\.py$|\\.sh$|\\.md$|\\.json$|\\.html$|\\.css$|\\.js$" 2>/dev/null || echo "0")
-CONFIG_CHANGED=$(echo "$FILES_CHANGED" | grep -cE "\\.gitignore|supervisord|conf$" 2>/dev/null || echo "0")
+LOGS_CHANGED=$(echo "$FILES_CHANGED" | grep -c "^logs/" || true)
+MEMORY_CHANGED=$(echo "$FILES_CHANGED" | grep -c "^memory/" || true)
+CODE_CHANGED=$(echo "$FILES_CHANGED" | grep -cE '\.(py|sh|md|json|html|css|js)$' || true)
+CONFIG_CHANGED=$(echo "$FILES_CHANGED" | grep -cE '\.gitignore|supervisord|\.conf$' || true)
 
 # Build commit message
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
