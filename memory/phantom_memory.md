@@ -5,6 +5,7 @@
 - **2026-03-11 (session 2)**: Corrected VNC URL — it IS publicly accessible. Shared link with channel. No new user requests pending at session start.
 - **2026-03-11 (session 3)**: Responded to 10 pending messages. Searched "anthropic models" on Google via browser and uploaded screenshot. Fixed browser proxy issue (Psiphon was configured but not running). Replied to Gmail request thread (declined — irreversible action on user's behalf). Explained memory system to user.
 - **2026-03-11 (session 4)**: Gmail compose task completed by parallel session — composed email to yanyu6631@gmail.com with "Hello!" subject and left it for user to send. User compromised on not sending, just composing. Also my session re-disabled Psiphon proxy and confirmed browser works without it. Gmail shows sign-in page after browser restart (cookies lost).
+- **2026-03-11 (session 5)**: User asked how to permanently fix stale VNC URLs. Added CLI tool to `phantom/vnc.py` with `fix-from-url`, `fix`, `status` commands. Committed to git.
 
 ## Known Sites
 - **Google Search**: Works well when proxy is not interfering. Rate-limits after many rapid goto() calls in same session.
@@ -18,7 +19,7 @@
 - After many navigations, browser may hit ERR_BLOCKED_BY_RESPONSE on search engines. May need to restart browser or wait.
 - Always use `connect_cdp()` not `BrowserInterface().start()`
 - **VNC URL IS publicly accessible** — always share when asked. Get via `from phantom.vnc import get_vnc_url; get_vnc_url()`
-- **VNC URL was wrong because /dev/shm/sandbox_metadata.json had stale thread_id**. Fixed by updating to correct ID (bc093390-...). If URL is ever wrong again, check this file first.
+- **VNC URL stale fix**: Added CLI tool `python phantom/vnc.py fix-from-url "<url>"` to permanently fix stale sandbox IDs. Also `python phantom/vnc.py status` to check. Root cause: `/dev/shm/sandbox_metadata.json` keeps old thread_id after env restart.
 - **Psiphon proxy**: Was previously "always enabled" but tunnel core is not installed. Code now sets proxy_server=None. If browser shows ERR_PROXY_CONNECTION_FAILED, it was started with old config — restart it.
 
 ## Configuration
