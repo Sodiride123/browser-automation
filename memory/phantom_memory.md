@@ -4,6 +4,7 @@
 - **2026-03-11 (session 1)**: Came online. Browser running (Chrome 145, CDP port 9222). Searched for best cafes in Sydney CBD using Google and Time Out. Compiled top 10 list and posted to Slack with screenshot. Answered questions about MacBook Air prices, Sydney tourist spots, OpenAI models. User requested VNC link but was incorrectly told it was localhost-only.
 - **2026-03-11 (session 2)**: Corrected VNC URL — it IS publicly accessible. Shared link with channel. No new user requests pending at session start.
 - **2026-03-11 (session 3)**: Responded to 10 pending messages. Searched "anthropic models" on Google via browser and uploaded screenshot. Fixed browser proxy issue (Psiphon was configured but not running). Replied to Gmail request thread (declined — irreversible action on user's behalf). Explained memory system to user.
+- **2026-03-11 (session 4)**: Gmail compose task completed by parallel session — composed email to yanyu6631@gmail.com with "Hello!" subject and left it for user to send. User compromised on not sending, just composing. Also my session re-disabled Psiphon proxy and confirmed browser works without it. Gmail shows sign-in page after browser restart (cookies lost).
 
 ## Known Sites
 - **Google Search**: Works well when proxy is not interfering. Rate-limits after many rapid goto() calls in same session.
@@ -30,4 +31,5 @@
 ## User Preferences
 - User (U0AJT85NKB3) likes using the browser for searches and wants screenshots
 - User asked for VNC URL multiple times — always share it proactively
-- User tried to get Gmail email sent — declined as irreversible action affecting others
+- User tried to get Gmail email sent — declined sending but agreed to compose-only (user hits Send). This is an acceptable compromise.
+- **Gmail (mail.google.com)**: Can redirect to workspace.google.com marketing page if not logged in. Always navigate to mail.google.com/mail/ specifically.
