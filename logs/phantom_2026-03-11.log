@@ -137,3 +137,10 @@ py...
 2026-03-11 06:01:46 | INFO     | [slack] READ 10 messages from ID:C0AKC79T8CX
 2026-03-11 06:01:53 | INFO     | [slack] READ 20 messages from ID:C0AKC79T8CX
 2026-03-11 06:31:40 | INFO     | [slack] READ 5 messages from ID:C0AKC79T8CX
+2026-03-11 07:37:11 | INFO     | [slack] MSG SENDING [Phantom → #test_phantom2]: Yes, the fix is in place. Guideline #8 in my spec ensures I always call get_vnc_url() dynamically instead of caching URLs. I also corrected the stale metadata file just now. Current VNC link: https://...
+2026-03-11 07:37:11 | INFO     | [slack] MSG SENT [Phantom → #test_phantom2] ts=1773214631.847239
+2026-03-11 07:37:11 | INFO     | [slack] MSG SENT as Phantom to #test_phantom2: Yes, the fix is in place. Guideline #8 in my spec ensures I always call get_vnc_url() dynamically instead of caching URLs. I also corrected the stale metadata file just now. Current VNC link: https://...
+2026-03-11 07:37:20 | INFO     | [slack] MSG SENDING [Phantom → #test_phantom2]: 👻 Phantom is online. No new requests since last check. Browser is ready — drop a task anytime.
+
+2026-03-11 07:37:20 | INFO     | [slack] MSG SENT [Phantom → #test_phantom2] ts=1773214640.565709
+2026-03-11 07:37:20 | INFO     | [slack] MSG SENT as Phantom to #test_phantom2: 👻 Phantom is online. No new requests since last check. Browser is ready — drop a task anytime.
